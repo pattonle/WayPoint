@@ -479,25 +479,15 @@ async def register_user(interaction: discord.Interaction, gamertag: str, platfor
 async def start_tracking(interaction: discord.Interaction):
     discord_id = interaction.user.id
     async with aiosqlite.connect('server.db') as db:
-        cursor = await db.cursor()
-        await cursor.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,))
-        user = await cursor.fetchone()
+        async with db.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,)) as cursor:
+            user = await cursor.fetchone()
 
     if user is None:
         await interaction.response.send_message("❌ You are not registered. Please use /register command first.", ephemeral=True)
         return
 
-    # Use dict-style access for clarity
-    if isinstance(user, tuple):
-        # fallback for legacy row_factory
-        discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered = user
-    else:
-        discord_id = user["discord_id"]
-        discord_server_id = user["discord_server_id"]
-        apex_uid = user["apex_uid"]
-        platform = user["platform"]
-        current_RP = user["current_RP"]
-        time_registered = user["time_registered"]
+    # Use tuple unpacking for the user data
+    discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered = user
 
     # Query Apex API
     playerURL = f"https://api.mozambiquehe.re/bridge?auth={ApexAPIKey}&uid={apex_uid}&platform={platform}"
@@ -507,40 +497,42 @@ async def start_tracking(interaction: discord.Interaction):
         playerData = playerresp.json()
         apex_rp = int(playerData['global']['rank']['rankScore'])
     except Exception as e:
-        await interaction.response.send_message(f"Failed to fetch RP from API", ephemeral=True)
+        await interaction.response.send_message(f"Failed to fetch RP from API: {e}", ephemeral=True)
         return
 
-
     # Update only current_RP
-    cursor.execute(
-        "UPDATE users SET current_RP = ?, time_registered = ? WHERE discord_id = ?",
-        (apex_rp, datetime.now(et), discord_id)
-    )
-    db.commit()
+    async with aiosqlite.connect('server.db') as db:
+        await db.execute(
+            "UPDATE users SET current_RP = ?, time_registered = ? WHERE discord_id = ?",
+            (apex_rp, datetime.now(et), discord_id)
+        )
+        await db.commit()
 
     await interaction.response.send_message(f"Tracking started — current RP: {apex_rp}", ephemeral=True)
     
 @bot.tree.command(name="stop_tracking", description="Stops tracking your Apex RP")
 async def stop_tracking(interaction: discord.Interaction):
     discord_id = interaction.user.id
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,))
-    user = cursor.fetchone()
+    async with aiosqlite.connect('server.db') as db:
+        async with db.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,)) as cursor:
+            user = await cursor.fetchone()
 
     if user is None:
         await interaction.response.send_message("❌ You are not registered. Please use /register command first.", ephemeral=True)
         return
 
-    # Use dict-style access for clarity
-    if isinstance(user, tuple):
-        # fallback for legacy row_factory
-        discord_id, discord_server_id, apex_uid, platform, current_RP = user
+    # Use tuple unpacking for the user data
+    discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered = user
+
+    # Parse the stored time_registered string into a datetime object
+    if time_registered:
+        time_registered = datetime.fromisoformat(time_registered)
     else:
-        discord_id = user["discord_id"]
-        discord_server_id = user["discord_server_id"]
-        apex_uid = user["apex_uid"]
-        platform = user["platform"]
-        current_RP = user["current_RP"]
+        await interaction.response.send_message("❌ No tracking start time found. Please start tracking first.", ephemeral=True)
+        return
+
+    # Calculate time difference
+    time_played = format_time_difference(time_registered, datetime.now(et))
 
     # Query Apex API
     playerURL = f"https://api.mozambiquehe.re/bridge?auth={ApexAPIKey}&uid={apex_uid}&platform={platform}"
@@ -550,15 +542,25 @@ async def stop_tracking(interaction: discord.Interaction):
         playerData = playerresp.json()
         apex_rp = int(playerData['global']['rank']['rankScore'])
     except Exception as e:
-        await interaction.response.send_message(f"Failed to fetch RP from API", ephemeral=True)
+        await interaction.response.send_message(f"Failed to fetch RP from API: {e}", ephemeral=True)
         return
 
     # Update only current_RP
-    cursor.execute("UPDATE users SET current_RP = ? WHERE discord_id = ?", (0, discord_id))
-    db.commit()
-
-    await interaction.response.send_message(f"Tracking started — current RP: {apex_rp}", ephemeral=True)
-
+    async with aiosqlite.connect('server.db') as db:
+        await db.execute(
+            "UPDATE users SET current_RP = ?, time_registered = NULL WHERE discord_id = ?",
+            (apex_rp, discord_id)
+        )
+        await db.commit()
+    if current_RP < apex_rp:
+        rp_gained = apex_rp - current_RP
+        await interaction.response.send_message(f"Tracking ended — current RP: {apex_rp}. Gained {rp_gained} RP in {time_played}", ephemeral=True)
+    elif current_RP > apex_rp:   
+        rp_lost = current_RP - apex_rp
+        await interaction.response.send_message(f"Tracking ended — current RP: {apex_rp}. Lost {rp_lost} RP in {time_played}", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"Tracking ended — current RP: {apex_rp}. No RP gained or lost in {time_played}", ephemeral=True)
+    
     
 bot.run(DiscordTOKEN)
 
