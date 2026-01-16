@@ -581,3 +581,18 @@ async def stop_tracking(interaction: discord.Interaction):
     
 bot.run(DiscordTOKEN)
 
+
+
+# THINGS TO CONSIDER FOR FUTURE UPDATES
+# alter servers db to change name of server_status to apex_server_id 
+# alter users db to add columns for stats message id and stats channel id 
+# get rid of hardcoded debug statements and implement a loop to update player stats every X minutes
+# implement error handling for api requests
+# implement unregister command to delete user from db
+# implement command to view current registered info
+# implement command to view current tracked rp and time registered
+# implement leaderboard command to view top 3 players in server by rp 
+# implement command to change apex uid or platform
+# implement periodic task to update server status message in each server's registered status channel
+# implement periodic task to update each user's tracked rp and notify them of changes
+# implement command to view current map rotation and server status without player stats
