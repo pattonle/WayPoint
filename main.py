@@ -8,6 +8,8 @@ import requests
 import sqlite3
 import asyncio
 from datetime import datetime, timedelta, timezone
+import atexit
+import aiosqlite
 
 #load environment variables
 load_dotenv()
@@ -32,22 +34,41 @@ discord_logger = logging.getLogger('discord')
 discord_logger.setLevel(logging.DEBUG)
 discord_logger.addHandler(handler)
 
+et = timezone(timedelta(hours=-5))  
+
+#helper function to format time differences
+def format_time_difference(start_time, end_time):
+    """Format time difference in a human-readable way"""
+    diff = end_time - start_time
+    
+    days = diff.days
+    total_seconds = int(diff.total_seconds())
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    if days > 0:
+        return f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
+    else:
+        return f"{hours} hours, {minutes} minutes, {seconds} seconds"
+
 # Automatically save new server config when bot joins a server
 @bot.event
 async def on_guild_join(guild):
-    save_server_config(
+    save_server_config(db,
         server_id=guild.id,
         server_status=None
     )
     print(f"✅ Joined new server: {guild.name} ({guild.id}) and added to database.")
+db = None
 
 # Initialize the database
 def init_db():
+    global db
     db = sqlite3.connect('server.db')
     c = db.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS servers (
-            server_id INTEGER PRIMARY KEY,     -- Each Discord server has unique ID (like social security number)
+            server_id INTEGER PRIMARY KEY,     -- Each Discord server has   unique ID (like social security number)
             server_status INTEGER        -- Store channel ID for server status
         )
     ''')
@@ -57,23 +78,34 @@ def init_db():
             discord_id INTEGER PRIMARY KEY, -- Each Discord user has unique ID
             discord_server_id INTEGER,              -- Foreign key to link user to a server
             apex_uid TEXT,                 -- Store Apex Legends UID
-            apex_server_id INTEGER,         -- Store server ID for Apex Legends
-            current_RP INTEGER              -- Store current RP of the user
+            platform TEXT,         -- Store platform for Apex Legends
+            current_RP INTEGER,              -- Store current RP of the user
+            time_registered TIMESTAMP  -- Timestamp of registration
         )
     ''')
     db.commit()
-    db.close()
+    # Migration: ensure required columns exist (add missing columns safely)
+    c.execute("PRAGMA table_info(users)")
+    cols = [row[1] for row in c.fetchall()]
+    if 'platform' not in cols:
+        c.execute("ALTER TABLE users ADD COLUMN platform TEXT")
+        print("⚙️ Migrated: added 'platform' column to users table")
+    if 'current_RP' not in cols:
+        c.execute("ALTER TABLE users ADD COLUMN current_RP INTEGER")
+        print("⚙️ Migrated: added 'current_RP' column to users table")
+    db.commit()
     print("✅ Database created and ready!")
-
+    return db
+db = init_db()
+atexit.register(lambda: db.close())
 # save or update server config
-def save_server_config(server_id, server_status=None):
+def save_server_config(db,server_id, server_status=None):
     """Insert or update server config. Only overwrite columns when a non-None value is provided.
 
     Usage:
-      save_server_config(server_id, server_status=123)
+    save_server_config(db, server_id, server_status=123)
     will update only the server_status for that server and preserve other fields.
     """
-    db = sqlite3.connect('server.db')
     c = db.cursor()
 
     # Check if a row already exists for this server
@@ -97,7 +129,6 @@ def save_server_config(server_id, server_status=None):
         ''', (new_status, server_id))
 
     db.commit()
-    db.close()
     print(f"✅ Server {server_id} configuration saved/updated!")
 
 #hard coded token login
@@ -138,7 +169,6 @@ console_server_data = server_data['otherPlatforms']
 # Boilerplate event: on_ready
 @bot.event
 async def on_ready():
-    init_db()
     await bot.tree.sync() 
 
 
@@ -313,7 +343,7 @@ async def example(interaction: discord.Interaction):
 @app_commands.checks.has_role(admin)
 async def serverid_slash(interaction: discord.Interaction):
     server_id = interaction.guild.id
-    save_server_config(server_id=server_id, server_status=None)
+    save_server_config(db,server_id=server_id, server_status=None)
     await interaction.response.send_message(f"Server ID {server_id} and configuration saved to database!", ephemeral=True)
 
 @bot.tree.command(name="register_server_status", description="registers server status channel")
@@ -401,7 +431,6 @@ async def register_server_status(interaction: discord.Interaction):
     )
 
     # Add timestamp and footer (matching your original format)
-    et = timezone(timedelta(hours=-5))  
     now_et = datetime.now(et)
     formatted_time = now_et.strftime("%I:%M %p").lstrip("0")
 
@@ -426,21 +455,19 @@ async def register_user(interaction: discord.Interaction, gamertag: str, platfor
     playerData = playerresp.json()
     apex_uid = playerData['global']['uid']
     
-    db = sqlite3.connect('server.db')
     c = db.cursor()
 
     # Insert or update user info
     c.execute('''
-        INSERT INTO users (discord_id, discord_server_id, apex_uid, apex_server_id, current_RP)
+        INSERT INTO users (discord_id, discord_server_id, apex_uid, platform, current_RP)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(discord_id) DO UPDATE SET
             discord_server_id=excluded.discord_server_id,
             apex_uid=excluded.apex_uid,
-            apex_server_id=excluded.apex_server_id
+            platform=excluded.platform
     ''', (discord_id, discord_server_id, apex_uid, platform, 0))
 
     db.commit()
-    db.close()
 
     await interaction.response.send_message(f"✅ Your Apex UID `{apex_uid}` and server ID `{platform}` have been registered!", ephemeral=True)
 
@@ -448,17 +475,90 @@ async def register_user(interaction: discord.Interaction, gamertag: str, platfor
 #add a unregister command if you need to change your apex uid or server id later
 
 
-@bot.tree.command(name="startTracking", description="Starts tracking your Apex RP")
+@bot.tree.command(name="start_tracking", description="Starts tracking your Apex RP")
 async def start_tracking(interaction: discord.Interaction):
+    discord_id = interaction.user.id
+    async with aiosqlite.connect('server.db') as db:
+        cursor = await db.cursor()
+        await cursor.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,))
+        user = await cursor.fetchone()
 
+    if user is None:
+        await interaction.response.send_message("❌ You are not registered. Please use /register command first.", ephemeral=True)
+        return
+
+    # Use dict-style access for clarity
+    if isinstance(user, tuple):
+        # fallback for legacy row_factory
+        discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered = user
+    else:
+        discord_id = user["discord_id"]
+        discord_server_id = user["discord_server_id"]
+        apex_uid = user["apex_uid"]
+        platform = user["platform"]
+        current_RP = user["current_RP"]
+        time_registered = user["time_registered"]
+
+    # Query Apex API
+    playerURL = f"https://api.mozambiquehe.re/bridge?auth={ApexAPIKey}&uid={apex_uid}&platform={platform}"
+    try:
+        playerresp = requests.get(playerURL)
+        playerresp.raise_for_status()
+        playerData = playerresp.json()
+        apex_rp = int(playerData['global']['rank']['rankScore'])
+    except Exception as e:
+        await interaction.response.send_message(f"Failed to fetch RP from API", ephemeral=True)
+        return
+
+
+    # Update only current_RP
+    cursor.execute(
+        "UPDATE users SET current_RP = ?, time_registered = ? WHERE discord_id = ?",
+        (apex_rp, datetime.now(et), discord_id)
+    )
+    db.commit()
+
+    await interaction.response.send_message(f"Tracking started — current RP: {apex_rp}", ephemeral=True)
+    
+@bot.tree.command(name="stop_tracking", description="Stops tracking your Apex RP")
+async def stop_tracking(interaction: discord.Interaction):
+    discord_id = interaction.user.id
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,))
+    user = cursor.fetchone()
+
+    if user is None:
+        await interaction.response.send_message("❌ You are not registered. Please use /register command first.", ephemeral=True)
+        return
+
+    # Use dict-style access for clarity
+    if isinstance(user, tuple):
+        # fallback for legacy row_factory
+        discord_id, discord_server_id, apex_uid, platform, current_RP = user
+    else:
+        discord_id = user["discord_id"]
+        discord_server_id = user["discord_server_id"]
+        apex_uid = user["apex_uid"]
+        platform = user["platform"]
+        current_RP = user["current_RP"]
+
+    # Query Apex API
+    playerURL = f"https://api.mozambiquehe.re/bridge?auth={ApexAPIKey}&uid={apex_uid}&platform={platform}"
+    try:
+        playerresp = requests.get(playerURL)
+        playerresp.raise_for_status()
+        playerData = playerresp.json()
+        apex_rp = int(playerData['global']['rank']['rankScore'])
+    except Exception as e:
+        await interaction.response.send_message(f"Failed to fetch RP from API", ephemeral=True)
+        return
+
+    # Update only current_RP
+    cursor.execute("UPDATE users SET current_RP = ? WHERE discord_id = ?", (0, discord_id))
+    db.commit()
+
+    await interaction.response.send_message(f"Tracking started — current RP: {apex_rp}", ephemeral=True)
 
     
-    playerURL=f"https://api.mozambiquehe.re/bridge?auth={ApexAPIKey}&player={gamertag}&platform={platform}"
-
-    playerresp = requests.get(playerURL)
-    playerData = playerresp.json()
-    apex_uid = playerData['global']['uid']
-    
-    await interaction.response.send_message("Tracking started! (Functionality to be implemented)", ephemeral=True)
-
 bot.run(DiscordTOKEN)
+
