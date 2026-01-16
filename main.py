@@ -99,36 +99,32 @@ def init_db():
 db = init_db()
 atexit.register(lambda: db.close())
 # save or update server config
-def save_server_config(db,server_id, server_status=None):
+async def save_server_config(db,server_id, server_status=None):
     """Insert or update server config. Only overwrite columns when a non-None value is provided.
 
     Usage:
     save_server_config(db, server_id, server_status=123)
     will update only the server_status for that server and preserve other fields.
     """
-    c = db.cursor()
-
-    # Check if a row already exists for this server
-    c.execute('SELECT server_status FROM servers WHERE server_id = ?', (server_id,))
-    row = c.fetchone()
+    async with db.execute('SELECT server_status FROM servers WHERE server_id = ?', (server_id,)) as cursor:
+        row = await cursor.fetchone()
 
     if row is None:
         # No existing row — insert whatever values were provided (others will be NULL)
-        c.execute('''
+        await db.execute('''
             INSERT INTO servers (server_id, server_status)
             VALUES (?, ?)
         ''', (server_id, server_status))
     else:
-        cur_status = row[0]
-        new_status = server_status if server_status is not None else cur_status
+        # Update only the provided columns
+        if server_status is not None:
+            await db.execute('''
+                UPDATE servers
+                SET server_status = ?
+                WHERE server_id = ?
+            ''', (server_status, server_id))
 
-        c.execute('''
-            UPDATE servers
-            SET server_status = ?
-            WHERE server_id = ?
-        ''', (new_status, server_id))
-
-    db.commit()
+    await db.commit()
     print(f"✅ Server {server_id} configuration saved/updated!")
 
 #hard coded token login
@@ -158,6 +154,7 @@ server_data = responses["server"]
 
 global_data = player2_data['global']
 ranked_data = global_data['rank']
+ltm_data = map_data['ltm']
 predcap_data = predator_data['RP']
 matchmaking_server_data = server_data['EA_novafusion']
 crossplay_server_data = server_data['ApexOauth_Crossplay']
@@ -205,7 +202,7 @@ async def on_ready():
 
 
     player_embed = discord.Embed(
-        title=f"🎮 **APEX LEGENDS STATS**",
+        title=f"🎮 **__APEX LEGENDS STATS__**",
         description=f"**Player:** `{global_data['name']}`\n**UID:** `{global_data['uid']}`",
         colour=discord.Colour.gold() if "predator" in ranked_data['rankName'].lower() else 
                 discord.Colour.purple() if "master" in ranked_data['rankName'].lower() else 
@@ -219,20 +216,20 @@ async def on_ready():
 
     # Personal Stats Section
     player_embed.add_field(
-        name="📊 **RANKED STATS**",
-        value="────────────────",
+        name="📊 **__RANKED STATS__**",
+        value="",
         inline=False
     )
 
     player_embed.add_field(
         name="🏆 Current Rank",
-        value=f"**{ranked_data['rankName']} {rankdiv}**",
+        value=f"```{ranked_data['rankName']} {rankdiv}```",
         inline=True
     )
 
     player_embed.add_field(
-        name="🔢 Rank Points",
-        value=f"**{ranked_data['rankScore']:,}** RP",
+        name="🌟 Rank Points",
+        value=f"```{ranked_data['rankScore']} RP```",
         inline=True
     )
 
@@ -240,19 +237,37 @@ async def on_ready():
         rp_until_pred = predcap_data['PC']['val'] - ranked_data['rankScore']
         player_embed.add_field(
             name="🎯 RP to Predator",
-            value=f"**{rp_until_pred:,}** RP",
+            value=f"```{rp_until_pred} RP```",
             inline=True
         )
 
     # Map & Server Info Section
     player_embed.add_field(
-        name="🗺️ **MAP ROTATION**",
-        value="────────────────",
+        name="🗺️ **__MAP ROTATION__**",
+        value="",
         inline=False
     )
 
     player_embed.add_field(
-        name="Current Map",
+        name="LTM",
+        value=f"```{ltm_data['current']['eventName']}```",
+        inline=True
+    )
+
+    player_embed.add_field(
+        name="⏱️ Time Remaining",
+        value=f"```{ltm_data['current']['remainingMins']}m```",
+        inline=True
+    )
+    player_embed.add_field(
+        name="Next LTM",
+        value=f"```{ltm_data['next']['eventName']}```",
+        inline=True
+    )
+
+
+    player_embed.add_field(
+        name="Ranked Map",
         value=f"```{map_data['ranked']['current']['map']}```",
         inline=True
     )
@@ -271,20 +286,20 @@ async def on_ready():
 
     # Server Info Section
     player_embed.add_field(
-        name="📈 **SERVER INFO**",
-        value="────────────────",
+        name="📈 **__SERVER INFO__**",
+        value="",
         inline=False
     )
 
     player_embed.add_field(
         name="🏆 Predator Cap",
-        value=f"**{predcap_data['PC']['val']:,}** RP",
+        value=f"```{predcap_data['PC']['val']} RP```",
         inline=True
     )
 
     player_embed.add_field(
         name="🌍 Platform",
-        value="**PC**",
+        value="```PC```",
         inline=True
     )
 
@@ -292,10 +307,10 @@ async def on_ready():
     et = timezone(timedelta(hours=-5))  
     now_et = datetime.now(et)
 
-    formatted_time = now_et.strftime("%I:%M %p").lstrip("0")
+    formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
     player_embed.set_footer(
-        text=f"updated today at {formatted_time} ET"
+        text=f"last updated {formatted_time} ET"
     )
     # Set thumbnail
     rank_img_url = ranked_data.get('rankImg', None)
@@ -350,93 +365,98 @@ async def serverid_slash(interaction: discord.Interaction):
 @app_commands.checks.has_role(admin)
 async def register_server_status(interaction: discord.Interaction):
     server_status_channel_id = interaction.channel.id
-    save_server_config(server_id=interaction.guild.id, server_status=server_status_channel_id)
+
+    async with aiosqlite.connect('server.db') as db:
+        await save_server_config(db=db, server_id=interaction.guild.id, server_status=server_status_channel_id)
+        await db.commit()
+
     await interaction.response.send_message(f"Server status channel ID {server_status_channel_id} saved to database!", ephemeral=True)
     channel = bot.get_channel(server_status_channel_id)
 
+    # Define a dictionary to map server statuses to emojis
+    status_emojis = {
+        "UP": "🟢",  # Green circle for "UP"
+        "DOWN": "🔴",  # Red circle for "DOWN"
+        "SLOW": "🟡",  # Yellow circle for "SLOW"
+        "UNKNOWN": "⚪"  # White circle for "UNKNOWN"
+    }
+
+    # Define a dictionary to map regions to flags
+    region_flags = {
+        "US-EAST": ":flag_us:",
+        "US-WEST": ":flag_us:",
+        "US-CENTRAL": ":flag_us:",
+        "EU-EAST": ":flag_eu:",
+        "EU-WEST": ":flag_eu:",
+        "EU-CENTRAL": ":flag_eu:",
+        "ASIA": "🌏",
+        "SOUTHAMERICA": "🌍"
+    }
 
     server_embed = discord.Embed(
-    title=" **APEX LEGENDS SERVER STATUS**",
-    description="Real-time server status and connectivity",
-    colour=discord.Colour.blue()  # Or choose your preferred color
-)
+        title=" **APEX LEGENDS SERVER STATUS**",
+        description="Real-time server status and connectivity",
+        colour=discord.Colour.blue()  # Or choose your preferred color
+    )
 
     # Matchmaking Server Status Section
     server_embed.add_field(
-        name="🛠️ **MATCHMAKING SERVERS**",
-        value="────────────────",
+        name="🛠️ **___MATCHMAKING SERVERS___**",
+        value="",
         inline=False
     )
 
-    server_embed.add_field(
-        name="🇺🇸 US-East",
-        value=f"```{matchmaking_server_data['US-East']['Status']}```",
-        inline=True
-    )
-
-    server_embed.add_field(
-        name="🇺🇸 US-West",
-        value=f"```{matchmaking_server_data['US-West']['Status']}```",
-        inline=True
-    )
-
-    server_embed.add_field(
-        name="🇺🇸 US-Central",
-        value=f"```{matchmaking_server_data['US-Central']['Status']}```",
-        inline=True
-    )
+    for region, data in matchmaking_server_data.items():
+        status = data['Status'].upper()  # Get the status and convert to uppercase
+        emoji = status_emojis.get(status, "⚪")  # Default to white circle if status is unknown
+        flag = region_flags.get(region.upper(), "❓")  # Default to question mark if region is unknown
+        server_embed.add_field(
+            name=f"{flag} {region}",
+            value=f"```{emoji} {status}```",
+            inline=True
+        )
 
     # Crossplay Server Status Section
     server_embed.add_field(
-        name="🔗 **CROSSPLAY SERVERS**",
-        value="────────────────",
+        name="🔗 **___CROSSPLAY SERVERS___**",
+        value="",
         inline=False
     )
 
-    server_embed.add_field(
-        name="🇺🇸 US-East",
-        value=f"```{crossplay_server_data['US-East']['Status']}```",
-        inline=True
-    )
-
-    server_embed.add_field(
-        name="🇺🇸 US-West",
-        value=f"```{crossplay_server_data['US-West']['Status']}```",
-        inline=True
-    )
-
-    server_embed.add_field(
-        name="🇺🇸 US-Central",
-        value=f"```{crossplay_server_data['US-Central']['Status']}```",
-        inline=True
-    )
+    for region, data in crossplay_server_data.items():
+        status = data['Status'].upper()
+        emoji = status_emojis.get(status, "⚪")
+        flag = region_flags.get(region.upper(), "❓")
+        server_embed.add_field(
+            name=f"{flag} {region}",
+            value=f"```{emoji} {status}```",
+            inline=True
+        )
 
     # Console Server Status Section
     server_embed.add_field(
-        name="🎮 **CONSOLE SERVERS**",
-        value="────────────────",
+        name="🎮 **___CONSOLE SERVERS___**",
+        value="",
         inline=False
     )
 
-    server_embed.add_field(
-        name="Xbox Live",
-        value=f"```{console_server_data['Xbox-Live']['Status']}```",
-        inline=True
-    )
-
-    server_embed.add_field(
-        name="PlayStation",
-        value=f"```{console_server_data['Playstation-Network']['Status']}```",
-        inline=True
-    )
+    for platform, data in console_server_data.items():
+        status = data['Status'].upper()
+        emoji = status_emojis.get(status, "⚪")
+        server_embed.add_field(
+            name=f"{platform}",
+            value=f"```{emoji} {status}```",
+            inline=True
+        )
 
     # Add timestamp and footer (matching your original format)
     now_et = datetime.now(et)
-    formatted_time = now_et.strftime("%I:%M %p").lstrip("0")
+    formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
     server_embed.set_footer(
-        text=f"updated today at {formatted_time} ET"
-)
+        text=f"last updated {formatted_time} ET"
+    )
+
     # Set thumbnail (using Apex logo or any relevant image)
     rank_img_url = "https://upload.wikimedia.org/wikipedia/commons/b/b1/Apex_legends_simple_logo.jpg"
     server_embed.set_thumbnail(url=rank_img_url)
@@ -454,20 +474,17 @@ async def register_user(interaction: discord.Interaction, gamertag: str, platfor
     playerresp = requests.get(playerURL)
     playerData = playerresp.json()
     apex_uid = playerData['global']['uid']
-    
-    c = db.cursor()
 
-    # Insert or update user info
-    c.execute('''
-        INSERT INTO users (discord_id, discord_server_id, apex_uid, platform, current_RP)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(discord_id) DO UPDATE SET
-            discord_server_id=excluded.discord_server_id,
-            apex_uid=excluded.apex_uid,
-            platform=excluded.platform
-    ''', (discord_id, discord_server_id, apex_uid, platform, 0))
-
-    db.commit()
+    async with aiosqlite.connect('server.db') as db:
+        await db.execute('''
+            INSERT INTO users (discord_id, discord_server_id, apex_uid, platform, current_RP)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(discord_id) DO UPDATE SET
+                discord_server_id=excluded.discord_server_id,
+                apex_uid=excluded.apex_uid,
+                platform=excluded.platform
+        ''', (discord_id, discord_server_id, apex_uid, platform, 0))
+        await db.commit()
 
     await interaction.response.send_message(f"✅ Your Apex UID `{apex_uid}` and server ID `{platform}` have been registered!", ephemeral=True)
 
