@@ -131,8 +131,7 @@ async def save_server_config(db,server_id, server_status=None):
 api_endpoints = {
 
     #make sure to remove this hardcoding later
-    "player2": f"https://api.mozambiquehe.re/bridge?auth={ApexAPIKey}&player=TheCloutFarmer&platform=PC",
-    "player": f"https://api.mozambiquehe.re/bridge?auth={ApexAPIKey}&player=TheCloutFarmer&platform=PC",
+
     "predator": f"https://api.mozambiquehe.re/predator?auth={ApexAPIKey}&platform=PC",
     "map": f"https://api.mozambiquehe.re/maprotation?auth={ApexAPIKey}&version=2",
     "server": f"https://api.mozambiquehe.re/servers?auth={ApexAPIKey}&version=2"
@@ -145,15 +144,9 @@ for key, url in api_endpoints.items():
     resp = requests.get(url)
     responses[key] = resp.json()
 
-player2_data = responses["player2"]
-player_data = responses["player"]
-
-predator_data = responses["predator"]
 map_data = responses["map"]
 server_data = responses["server"]
-
-global_data = player2_data['global']
-ranked_data = global_data['rank']
+predator_data = responses["predator"]
 ltm_data = map_data['ltm']
 predcap_data = predator_data['RP']
 matchmaking_server_data = server_data['EA_novafusion']
@@ -161,45 +154,13 @@ crossplay_server_data = server_data['ApexOauth_Crossplay']
 console_server_data = server_data['otherPlatforms']
 
 
-
-
-# Boilerplate event: on_ready
-@bot.event
-async def on_ready():
-    await bot.tree.sync() 
-
-
-#ALL DEBUGGING PRINT STATEMENTS
-    print("player: " + global_data['name'])
-    print("UID: " + global_data['uid'])
-    print("Current RP: " + str(ranked_data['rankScore']))
-    rankdiv = ranked_data['rankDiv']
-    if rankdiv == 0:
-        rankdiv = ""
-    print("Current Rank: " + ranked_data['rankName']+ " " + str(rankdiv))
-    print(ranked_data['rankImg'])
-    print("Predator Cap: " + str(predcap_data['PC']['val']))
-    print("current ranked map: "+ map_data['ranked']['current']['map'])
-    print("next ranked map: "+ map_data['ranked']['next']['map']+ " in "+ str(round(map_data['ranked']['current']['remainingMins']/60,1)) + " hours")
-    
-    
-    print("matchmaking server status")
-    print("US-East: " + matchmaking_server_data['US-East']['Status'])
-    print("US-West: " + matchmaking_server_data['US-West']['Status'])
-    print("US-Central: " + matchmaking_server_data['US-Central']['Status'])
-
-    print("Crossplay server status")
-    print("US-East: " + crossplay_server_data['US-East']['Status'])
-    print("US-West: " + crossplay_server_data['US-West']['Status'])
-    print("US-Central: " + crossplay_server_data['US-Central']['Status'])
-
-    print("Console server status")
-    print("Xbox-Live: " + console_server_data['Xbox-Live']['Status'])
-    print("Playstation: " + console_server_data['Playstation-Network']['Status'])
-
-
-#ALL DEBUGGING PRINT STATEMENTS
-
+# function to return player stats embed
+async def create_player_stats_embed(platform, apex_uid,formatted_time):
+    url = f"https://api.mozambiquehe.re/bridge?auth={ApexAPIKey}&uid={apex_uid}&platform={platform}"
+    resp = requests.get(url)
+    player_data = resp.json()
+    global_data = player_data['global']
+    ranked_data = global_data['rank']
 
     player_embed = discord.Embed(
         title=f"🎮 **__APEX LEGENDS STATS__**",
@@ -223,7 +184,7 @@ async def on_ready():
 
     player_embed.add_field(
         name="🏆 Current Rank",
-        value=f"```{ranked_data['rankName']} {rankdiv}```",
+        value=f"```{ranked_data['rankName']} {ranked_data['rankDiv']}```",
         inline=True
     )
 
@@ -303,16 +264,10 @@ async def on_ready():
         inline=True
     )
 
-    # Add timestamp and footer
-    et = timezone(timedelta(hours=-5))  
-    now_et = datetime.now(et)
-
-    formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
-
     player_embed.set_footer(
         text=f"last updated {formatted_time} ET"
     )
-    # Set thumbnail
+        # Set thumbnail
     rank_img_url = ranked_data.get('rankImg', None)
     if rank_img_url:
         player_embed.set_thumbnail(url=rank_img_url)
@@ -321,7 +276,22 @@ async def on_ready():
         icon_url=rank_img_url)
     else:
         player_embed.set_author(name=f"{global_data['name']}'s Profile")
+    return player_embed
 
+
+# Boilerplate event: on_ready
+@bot.event
+async def on_ready():
+    await bot.tree.sync() 
+
+    # Add timestamp and footer
+    et = timezone(timedelta(hours=-5))  
+    now_et = datetime.now(et)
+
+    formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
+
+    player_embed = await create_player_stats_embed("PC","1004649856339",formatted_time)
+    
     # Send to channel
     CHANNEL_ID = 1443272151997350041 
     channel = bot.get_channel(CHANNEL_ID)
@@ -375,10 +345,10 @@ async def register_server_status(interaction: discord.Interaction):
 
     # Define a dictionary to map server statuses to emojis
     status_emojis = {
-        "UP": "🟢",  # Green circle for "UP"
-        "DOWN": "🔴",  # Red circle for "DOWN"
-        "SLOW": "🟡",  # Yellow circle for "SLOW"
-        "UNKNOWN": "⚪"  # White circle for "UNKNOWN"
+        "UP": "🟢",  
+        "DOWN": "🔴",  
+        "SLOW": "🟡", 
+        "UNKNOWN": "⚪"  
     }
 
     # Define a dictionary to map regions to flags
@@ -396,7 +366,7 @@ async def register_server_status(interaction: discord.Interaction):
     server_embed = discord.Embed(
         title=" **APEX LEGENDS SERVER STATUS**",
         description="Real-time server status and connectivity",
-        colour=discord.Colour.blue()  # Or choose your preferred color
+        colour=discord.Colour.blue()  
     )
 
     # Matchmaking Server Status Section
@@ -517,7 +487,7 @@ async def start_tracking(interaction: discord.Interaction):
         await interaction.response.send_message(f"Failed to fetch RP from API: {e}", ephemeral=True)
         return
 
-    # Update only current_RP
+    # Update current_RP
     async with aiosqlite.connect('server.db') as db:
         await db.execute(
             "UPDATE users SET current_RP = ?, time_registered = ? WHERE discord_id = ?",
@@ -562,7 +532,7 @@ async def stop_tracking(interaction: discord.Interaction):
         await interaction.response.send_message(f"Failed to fetch RP from API: {e}", ephemeral=True)
         return
 
-    # Update only current_RP
+    # Update current_RP
     async with aiosqlite.connect('server.db') as db:
         await db.execute(
             "UPDATE users SET current_RP = ?, time_registered = NULL WHERE discord_id = ?",
@@ -584,10 +554,14 @@ bot.run(DiscordTOKEN)
 
 
 # THINGS TO CONSIDER FOR FUTURE UPDATES
+
+#Priority 1
 # alter servers db to change name of server_status to apex_server_id 
 # alter users db to add columns for stats message id and stats channel id 
 # get rid of hardcoded debug statements and implement a loop to update player stats every X minutes
 # implement error handling for api requests
+
+#Priority 2
 # implement unregister command to delete user from db
 # implement command to view current registered info
 # implement command to view current tracked rp and time registered
