@@ -144,31 +144,21 @@ async def save_server_config(db, discord_server_id, apex_server_channel_id=None,
     print(f"✅ Server {discord_server_id} configuration saved/updated!")
 
 api_endpoints = {
-
     "predator": f"https://api.mozambiquehe.re/predator?auth={ApexAPIKey}",
     "map": f"https://api.mozambiquehe.re/maprotation?auth={ApexAPIKey}&version=2",
     "server": f"https://api.mozambiquehe.re/servers?auth={ApexAPIKey}&version=2"
-    
 }
 
-#map to store json objects from each endpoint
+# Initialize global variables (will be populated by fetch_api_data)
 responses = {}
-for key, url in api_endpoints.items():
-    resp = requests.get(url)
-    responses[key] = resp.json()
-
-map_data = responses["map"]
-ltm_data = map_data['ltm']
-
-server_data = responses["server"]
-
-
-predator_data = responses["predator"]
-predcap_data = predator_data['RP']
-
-matchmaking_server_data = server_data['EA_novafusion']
-crossplay_server_data = server_data['ApexOauth_Crossplay']
-console_server_data = server_data['otherPlatforms']
+map_data = {}
+ltm_data = {}
+server_data = {}
+predator_data = {}
+predcap_data = {}
+matchmaking_server_data = {}
+crossplay_server_data = {}
+console_server_data = {}
 
 
 # function to return player stats embed
@@ -221,10 +211,10 @@ async def create_player_stats_embed(platform, apex_uid,formatted_time):
         rp_until_pred = predcap_value - ranked_data['rankScore']
     else: 
         rp_until_pred = 0
-        player_embed.add_field(
-            name="🎯 RP to Predator",
-            value=f"```{rp_until_pred} RP```",
-            inline=True
+    player_embed.add_field(
+        name="🎯 RP to Predator",
+        value=f"```{rp_until_pred} RP```",
+        inline=True
         )
 
     # Map & Server Info Section
@@ -308,11 +298,125 @@ async def create_player_stats_embed(platform, apex_uid,formatted_time):
 @bot.event
 async def on_ready():
     await bot.tree.sync() # Sync commands with Discord
-    
+    await fetch_api_data()  # Initialize API data on startup
+    bot.loop.create_task(update_stats_periodically())
+    bot.loop.create_task(update_server_stats_periodically())
+
     print(f'✅ {bot.user.name} is online and connected to Discord!')
 
+async def update_stats_periodically():
+    while True:
+        await update_stats_message()
+        await asyncio.sleep(60 * 1)  # Update every 5 minutes 
+
+async def update_server_stats_periodically():
+    while True:
+        await update_server_message()
+        await asyncio.sleep(60 * 20)  # Update every 5 minutes
+
+async def fetch_api_data():
+    """Fetch and update global API data."""
+    global responses, map_data, ltm_data, server_data, predator_data, predcap_data
+    global matchmaking_server_data, crossplay_server_data, console_server_data
+
+    for key, url in api_endpoints.items():
+        try:
+            resp = requests.get(url)
+            responses[key] = resp.json()
+        except Exception as e:
+            print(f"❌ Failed to fetch data from {url}: {e}")
+
+    map_data = responses.get("map", {})
+    ltm_data = map_data.get('ltm', {})
+    server_data = responses.get("server", {})
+    predator_data = responses.get("predator", {})
+    predcap_data = predator_data.get('RP', {})
+    matchmaking_server_data = server_data.get('EA_novafusion', {})
+    crossplay_server_data = server_data.get('ApexOauth_Crossplay', {})
+    console_server_data = server_data.get('otherPlatforms', {})
 
 
+async def update_server_message():
+    await fetch_api_data()  # Re-fetch API data
+
+    async with aiosqlite.connect('server.db') as db:
+        async with db.execute("SELECT * FROM servers") as cursor:
+            servers = await cursor.fetchall()
+
+        for server in servers:
+            discord_server_id, apex_server_channel_id, apex_server_message_id = server
+
+            # Fetch the channel
+            channel = bot.get_channel(apex_server_channel_id)
+            if channel is None:
+                print(f"❌ Could not find channel ID {apex_server_channel_id} for server {discord_server_id}")
+                continue
+
+            # Fetch the message
+            try:
+                message = await channel.fetch_message(apex_server_message_id)
+            except discord.NotFound:
+                print(f"❌ Could not find message ID {apex_server_message_id} in channel ID {apex_server_channel_id} for server {discord_server_id}")
+                continue
+
+            # Create updated embed
+            et = timezone(timedelta(hours=-5))  
+            now_et = datetime.now(et)
+            formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
+
+            updated_embed = create_server_status_embed(formatted_time)
+
+            # Edit the message
+            try:
+                await message.edit(embed=updated_embed)
+                print(f"✅ Updated server status message for server {discord_server_id}")
+            except discord.Forbidden:
+                print(f"❌ Bot lacks permissions to edit message ID {apex_server_message_id} in channel ID {apex_server_channel_id} for server {discord_server_id}")
+            except discord.HTTPException as e:
+                print(f"❌ Failed to edit server status message for server {discord_server_id}: {e}")
+
+async def update_stats_message():
+    await fetch_api_data()  # Re-fetch API data
+
+    async with aiosqlite.connect('server.db') as db:
+        async with db.execute("SELECT * FROM users") as cursor:
+            users = await cursor.fetchall()
+
+        for user in users:
+            discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered, stats_message_id, stats_channel_id = user
+
+            # Fetch the channel
+            channel = bot.get_channel(stats_channel_id)
+            if channel is None:
+                print(f"❌ Could not find channel ID {stats_channel_id} for user {discord_id}")
+                continue
+
+            # Fetch the message
+            try:
+                message = await channel.fetch_message(stats_message_id)
+            except discord.NotFound:
+                print(f"❌ Could not find message ID {stats_message_id} in channel ID {stats_channel_id} for user {discord_id}")
+                continue
+
+            # Create updated embed
+            et = timezone(timedelta(hours=-5))  
+            now_et = datetime.now(et)
+            formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
+
+            try:
+                updated_embed = await create_player_stats_embed(platform, apex_uid, formatted_time)
+            except Exception as e:
+                print(f"❌ Failed to create stats embed for user {discord_id}: {e}")
+                continue
+
+            # Edit the message
+            try:
+                await message.edit(embed=updated_embed)
+                print(f"✅ Updated stats message for user {discord_id}")
+            except discord.Forbidden:
+                print(f"❌ Bot lacks permissions to edit message ID {stats_message_id} in channel ID {stats_channel_id} for user {discord_id}")
+            except discord.HTTPException as e:
+                print(f"❌ Failed to edit stats message for user {discord_id}: {e}")
 
 
 
@@ -393,27 +497,7 @@ async def register_server_id(interaction: discord.Interaction):
 
     await interaction.response.send_message(f"✅ Server ID {discord_server_id} and configuration saved to the database!", ephemeral=True)
 
-@bot.tree.command(name="register_server_status", description="Registers server status channel and updates the status message")
-@app_commands.checks.has_role(admin)
-async def register_server_status(interaction: discord.Interaction):
-    apex_server_status_channel = interaction.channel.id
-
-    async with aiosqlite.connect('server.db') as db:
-        async with db.execute("SELECT apex_server_message_id FROM servers WHERE discord_server_id = ?", (interaction.guild.id,)) as cursor:
-            row = await cursor.fetchone()
-
-        apex_server_message_id = row[0] if row else None
-
-        await save_server_config(db=db, discord_server_id=interaction.guild.id, apex_server_channel_id=apex_server_status_channel)
-        await db.commit()
-
-    await interaction.response.send_message(f"Server status channel ID {apex_server_status_channel} saved to database!", ephemeral=True)
-
-    channel = bot.get_channel(apex_server_status_channel)
-    if not channel:
-        await interaction.followup.send("❌ Could not find the specified channel.", ephemeral=True)
-        return
-
+def create_server_status_embed(formatted_time):
     # Define a dictionary to map server statuses to emojis
     status_emojis = {
         "UP": "🟢",  
@@ -489,23 +573,49 @@ async def register_server_status(interaction: discord.Interaction):
             value=f"```{emoji} {status}```",
             inline=True
         )
+    server_embed.set_footer(
+        text=f"last updated {formatted_time} ET"
+    )
+        # Set thumbnail (using Apex logo or any relevant image)
+    rank_img_url = "https://upload.wikimedia.org/wikipedia/commons/b/b1/Apex_legends_simple_logo.jpg"
+    server_embed.set_thumbnail(url=rank_img_url)
+    return server_embed
 
+
+
+@bot.tree.command(name="register_server_status", description="Registers server status channel and updates the status message")
+@app_commands.checks.has_role(admin)
+async def register_server_status(interaction: discord.Interaction):
+
+    apex_server_status_channel = interaction.channel.id
+
+    async with aiosqlite.connect('server.db') as db:
+        async with db.execute("SELECT apex_server_message_id FROM servers WHERE discord_server_id = ?", (interaction.guild.id,)) as cursor:
+            row = await cursor.fetchone()
+
+        apex_server_message_id = row[0] if row else None
+
+        await save_server_config(db=db, discord_server_id=interaction.guild.id, apex_server_channel_id=apex_server_status_channel)
+        await db.commit()
+
+    await interaction.response.send_message(f"Server status channel ID {apex_server_status_channel} saved to database!", ephemeral=True)
+
+    channel = bot.get_channel(apex_server_status_channel)
+    if not channel:
+        await interaction.followup.send("❌ Could not find the specified channel.", ephemeral=True)
+        return
+
+    
     # Add timestamp and footer (matching your original format)
     now_et = datetime.now(et)
     formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
-    server_embed.set_footer(
-        text=f"last updated {formatted_time} ET"
-    )
-
-    # Set thumbnail (using Apex logo or any relevant image)
-    rank_img_url = "https://upload.wikimedia.org/wikipedia/commons/b/b1/Apex_legends_simple_logo.jpg"
-    server_embed.set_thumbnail(url=rank_img_url)
 
     # Check if a message already exists and edit it, otherwise send a new one
     if apex_server_message_id:
         try:
             message = await channel.fetch_message(apex_server_message_id)
+            server_embed = create_server_status_embed(formatted_time)
             await message.edit(embed=server_embed)
         except discord.NotFound:
             message = await channel.send(embed=server_embed)
@@ -520,6 +630,7 @@ async def register_server_status(interaction: discord.Interaction):
         )
         await db.commit()
 #needs to throw error if the user is registered already (done by checking discord id)
+
 @bot.tree.command(name="register", description="Registers your Apex UID and server ID(for xbox/ps use gamertag & pc use Origin gamertag)")
 async def register_user(interaction: discord.Interaction, gamertag: str, platform: str):
     discord_id = interaction.user.id
@@ -543,9 +654,6 @@ async def register_user(interaction: discord.Interaction, gamertag: str, platfor
         await db.commit()
 
     await interaction.response.send_message(f"✅ Your Apex UID `{apex_uid}` and server ID `{platform}` have been registered!", ephemeral=True)
-
-
-#add a unregister command if you need to change your apex uid or server id later
 
 
 @bot.tree.command(name="start_tracking", description="Starts tracking your Apex RP")
@@ -643,7 +751,6 @@ bot.run(DiscordTOKEN)
 # THINGS TO CONSIDER FOR FUTURE UPDATES
 
 #Priority 1
-# get rid of hardcoded debug statements and implement a loop to update player stats every X minutes
 # implement error handling for api requests
 #add steam api usage for automatic rp tracking on pc platform
 
