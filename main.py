@@ -610,12 +610,13 @@ async def register_server_status(interaction: discord.Interaction):
     now_et = datetime.now(et)
     formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
+    # Create the server embed
+    server_embed = create_server_status_embed(formatted_time)
 
     # Check if a message already exists and edit it, otherwise send a new one
     if apex_server_message_id:
         try:
             message = await channel.fetch_message(apex_server_message_id)
-            server_embed = create_server_status_embed(formatted_time)
             await message.edit(embed=server_embed)
         except discord.NotFound:
             message = await channel.send(embed=server_embed)
