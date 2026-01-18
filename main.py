@@ -592,6 +592,8 @@ async def create_server_status_embed(formatted_time):
 async def register_server_status(interaction: discord.Interaction):
     apex_server_status_channel = interaction.channel.id
     
+    await interaction.response.defer(ephemeral=True)
+
     await fetch_api_data()  # Ensure API data is fresh
 
     async with aiosqlite.connect('server.db') as db:
