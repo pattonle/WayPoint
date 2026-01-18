@@ -300,7 +300,13 @@ async def create_player_stats_embed(platform, apex_uid,formatted_time):
 @bot.event
 async def on_ready():
     await bot.tree.sync() # Sync commands with Discord
-    await fetch_api_data()  # Initialize API data on startup
+    print("⏳ Fetching initial API data...")
+    await fetch_api_data()  # Initialize API data on startup and WAIT for it
+    print("✅ API data loaded successfully!")
+    print(f"Matchmaking servers: {len(matchmaking_server_data)} regions")
+    print(f"Crossplay servers: {len(crossplay_server_data)} regions")
+    print(f"Console servers: {len(console_server_data)} platforms")
+    
     bot.loop.create_task(update_stats_periodically())
     bot.loop.create_task(update_server_stats_periodically())
 
