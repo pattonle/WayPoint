@@ -169,11 +169,13 @@ async def create_player_stats_embed(platform, apex_uid,formatted_time):
     global_data = player_data['global']
     ranked_data = global_data['rank']
 
-    if platform == "PC":
+    # Safely get predcap value with fallback
+    predcap_value = 0
+    if platform == "PC" and 'PC' in predcap_data:
         predcap_value = predcap_data['PC']['val']
-    elif platform == "X1":
+    elif platform == "X1" and 'X1' in predcap_data:
         predcap_value = predcap_data['X1']['val']
-    elif platform == "PS4":
+    elif platform == "PS4" and 'PS4' in predcap_data:
         predcap_value = predcap_data['PS4']['val']
     player_embed = discord.Embed(
         title=f"🎮 **__APEX LEGENDS STATS__**",
@@ -299,7 +301,6 @@ async def create_player_stats_embed(platform, apex_uid,formatted_time):
 async def on_ready():
     await bot.tree.sync() # Sync commands with Discord
     await fetch_api_data()  # Initialize API data on startup
-    print("im gonna fucking lose it!")
     bot.loop.create_task(update_stats_periodically())
     bot.loop.create_task(update_server_stats_periodically())
 
@@ -313,7 +314,7 @@ async def update_stats_periodically():
 async def update_server_stats_periodically():
     while True:
         await update_server_message()
-        await asyncio.sleep(60 * 20)  # Update every 5 minutes
+        await asyncio.sleep(60 * 5)  # Update every 20 minutes
 
 async def fetch_api_data():
     """Fetch and update global API data."""
@@ -439,6 +440,9 @@ async def stats(interaction: discord.Interaction):
         # Use tuple unpacking for the user data
         discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered, stats_message_id, stats_channel_id = user
 
+        # Acknowledge the interaction immediately
+        await interaction.response.send_message("🔄 Updating your stats...", ephemeral=True, delete_after=2)
+
         # Add timestamp and footer
         et = timezone(timedelta(hours=-5))  
         now_et = datetime.now(et)
@@ -447,7 +451,7 @@ async def stats(interaction: discord.Interaction):
         try:
             stats_embed = await create_player_stats_embed(platform, apex_uid, formatted_time)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Failed to create stats embed: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Failed to create stats embed: {e}", ephemeral=True)
             return
 
         try:
@@ -470,20 +474,10 @@ async def stats(interaction: discord.Interaction):
             )
             await db.commit()
 
-            await interaction.response.send_message("✅ Stats updated successfully!", ephemeral=True)
-
         except discord.Forbidden:
-            await interaction.response.send_message("❌ Bot lacks permissions to send messages in this channel.", ephemeral=True)
+            await interaction.followup.send("❌ Bot lacks permissions to send messages in this channel.", ephemeral=True)
         except discord.HTTPException as e:
-            await interaction.response.send_message(f"❌ Failed to send stats message: {e}", ephemeral=True)
-        
-
-
-        await db.execute(
-            "UPDATE users SET stats_message_id = ?,stats_channel_id = ? WHERE discord_id = ?",
-            (stats_message.id,stats_channel.id, discord_id)
-        )
-        await db.commit()
+            await interaction.followup.send(f"❌ Failed to send stats message: {e}", ephemeral=True)
 
 
 #not necessary since on_guild_join event handles this now
@@ -587,6 +581,13 @@ def create_server_status_embed(formatted_time):
 @bot.tree.command(name="register_server_status", description="Registers server status channel and updates the status message")
 @app_commands.checks.has_role(admin)
 async def register_server_status(interaction: discord.Interaction):
+    # Try to defer, if it fails the interaction has expired
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.HTTPException):
+        # Interaction already expired, we can't respond
+        return
+    
     apex_server_status_channel = interaction.channel.id
 
     async with aiosqlite.connect('server.db') as db:
@@ -597,8 +598,6 @@ async def register_server_status(interaction: discord.Interaction):
 
         await save_server_config(db=db, discord_server_id=interaction.guild.id, apex_server_channel_id=apex_server_status_channel)
         await db.commit()
-
-    await interaction.response.send_message(f"Server status channel ID {apex_server_status_channel} saved to database!", ephemeral=True)
 
     channel = bot.get_channel(apex_server_status_channel)
     if not channel:
@@ -632,6 +631,13 @@ async def register_server_status(interaction: discord.Interaction):
             (message.id, interaction.guild.id)
         )
         await db.commit()
+    
+    # Send success message at the end
+    try:
+        await interaction.followup.send(f"✅ Server status channel ID {apex_server_status_channel} saved and message updated!", ephemeral=True)
+    except discord.errors.NotFound:
+        # Interaction expired, but the operation still completed successfully
+        pass
 #needs to throw error if the user is registered already (done by checking discord id)
 
 @bot.tree.command(name="register", description="Registers your Apex UID and server ID(for xbox/ps use gamertag & pc use Origin gamertag)")
