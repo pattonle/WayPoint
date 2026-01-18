@@ -149,7 +149,7 @@ api_endpoints = {
     "server": f"https://api.mozambiquehe.re/servers?auth={ApexAPIKey}&version=2"
 }
 
-# Initialize global variables 
+# Initialize global variables (will be populated by fetch_api_data)
 responses = {}
 map_data = {}
 ltm_data = {}
@@ -169,11 +169,13 @@ async def create_player_stats_embed(platform, apex_uid,formatted_time):
     global_data = player_data['global']
     ranked_data = global_data['rank']
 
-    if platform == "PC":
+    # Safely get predcap value with fallback
+    predcap_value = 0
+    if platform == "PC" and 'PC' in predcap_data:
         predcap_value = predcap_data['PC']['val']
-    elif platform == "X1":
+    elif platform == "X1" and 'X1' in predcap_data:
         predcap_value = predcap_data['X1']['val']
-    elif platform == "PS4":
+    elif platform == "PS4" and 'PS4' in predcap_data:
         predcap_value = predcap_data['PS4']['val']
     player_embed = discord.Embed(
         title=f"🎮 **__APEX LEGENDS STATS__**",
@@ -298,7 +300,13 @@ async def create_player_stats_embed(platform, apex_uid,formatted_time):
 @bot.event
 async def on_ready():
     await bot.tree.sync() # Sync commands with Discord
-    await fetch_api_data()  # Initialize API data on startup
+    print("⏳ Fetching initial API data...")
+    await fetch_api_data()  # Initialize API data on startup and WAIT for it
+    print("✅ API data loaded successfully!")
+    print(f"Matchmaking servers: {len(matchmaking_server_data)} regions")
+    print(f"Crossplay servers: {len(crossplay_server_data)} regions")
+    print(f"Console servers: {len(console_server_data)} platforms")
+    
     bot.loop.create_task(update_stats_periodically())
     bot.loop.create_task(update_server_stats_periodically())
 
@@ -312,7 +320,7 @@ async def update_stats_periodically():
 async def update_server_stats_periodically():
     while True:
         await update_server_message()
-        await asyncio.sleep(60 * 20)  # Update every 5 minutes
+        await asyncio.sleep(60 * 5)  # Update every 20 minutes
 
 async def fetch_api_data():
     """Fetch and update global API data."""
@@ -364,7 +372,7 @@ async def update_server_message():
             now_et = datetime.now(et)
             formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
-            updated_embed = await create_server_status_embed(formatted_time)
+            updated_embed = create_server_status_embed(formatted_time)
 
             # Edit the message
             try:
@@ -425,7 +433,7 @@ async def update_stats_message():
 async def stats(interaction: discord.Interaction):
     stats_channel = interaction.channel  # Use interaction.channel directly
     discord_id = interaction.user.id
-    await fetch_api_data()  # Ensure API data is fresh
+
     # Update current_RP
     async with aiosqlite.connect('server.db') as db:
         async with db.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,)) as cursor:
@@ -438,6 +446,9 @@ async def stats(interaction: discord.Interaction):
         # Use tuple unpacking for the user data
         discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered, stats_message_id, stats_channel_id = user
 
+        # Acknowledge the interaction immediately
+        await interaction.response.send_message("🔄 Updating your stats...", ephemeral=True, delete_after=2)
+
         # Add timestamp and footer
         et = timezone(timedelta(hours=-5))  
         now_et = datetime.now(et)
@@ -446,7 +457,7 @@ async def stats(interaction: discord.Interaction):
         try:
             stats_embed = await create_player_stats_embed(platform, apex_uid, formatted_time)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Failed to create stats embed: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Failed to create stats embed: {e}", ephemeral=True)
             return
 
         try:
@@ -469,20 +480,10 @@ async def stats(interaction: discord.Interaction):
             )
             await db.commit()
 
-            await interaction.response.send_message("✅ Stats updated successfully!", ephemeral=True)
-
         except discord.Forbidden:
-            await interaction.response.send_message("❌ Bot lacks permissions to send messages in this channel.", ephemeral=True)
+            await interaction.followup.send("❌ Bot lacks permissions to send messages in this channel.", ephemeral=True)
         except discord.HTTPException as e:
-            await interaction.response.send_message(f"❌ Failed to send stats message: {e}", ephemeral=True)
-        
-
-
-        await db.execute(
-            "UPDATE users SET stats_message_id = ?,stats_channel_id = ? WHERE discord_id = ?",
-            (stats_message.id,stats_channel.id, discord_id)
-        )
-        await db.commit()
+            await interaction.followup.send(f"❌ Failed to send stats message: {e}", ephemeral=True)
 
 
 #not necessary since on_guild_join event handles this now
@@ -497,8 +498,7 @@ async def register_server_id(interaction: discord.Interaction):
 
     await interaction.response.send_message(f"✅ Server ID {discord_server_id} and configuration saved to the database!", ephemeral=True)
 
-async def create_server_status_embed(formatted_time):
-    await fetch_api_data()
+def create_server_status_embed(formatted_time):
     # Define a dictionary to map server statuses to emojis
     status_emojis = {
         "UP": "🟢",  
@@ -519,7 +519,6 @@ async def create_server_status_embed(formatted_time):
         "SOUTHAMERICA": "🌍"
     }
 
-    # Create the embed
     server_embed = discord.Embed(
         title=" **APEX LEGENDS SERVER STATUS**",
         description="Real-time server status and connectivity",
@@ -529,12 +528,12 @@ async def create_server_status_embed(formatted_time):
     # Matchmaking Server Status Section
     server_embed.add_field(
         name="🛠️ **___MATCHMAKING SERVERS___**",
-        value="No data available" if not matchmaking_server_data else "",
+        value="",
         inline=False
     )
 
     for region, data in matchmaking_server_data.items():
-        status = data.get('Status', 'UNKNOWN').upper()  # Get the status and convert to uppercase
+        status = data['Status'].upper()  # Get the status and convert to uppercase
         emoji = status_emojis.get(status, "⚪")  # Default to white circle if status is unknown
         flag = region_flags.get(region.upper(), "❓")  # Default to question mark if region is unknown
         server_embed.add_field(
@@ -546,12 +545,12 @@ async def create_server_status_embed(formatted_time):
     # Crossplay Server Status Section
     server_embed.add_field(
         name="🔗 **___CROSSPLAY SERVERS___**",
-        value="No data available" if not crossplay_server_data else "",
+        value="",
         inline=False
     )
 
     for region, data in crossplay_server_data.items():
-        status = data.get('Status', 'UNKNOWN').upper()
+        status = data['Status'].upper()
         emoji = status_emojis.get(status, "⚪")
         flag = region_flags.get(region.upper(), "❓")
         server_embed.add_field(
@@ -563,26 +562,24 @@ async def create_server_status_embed(formatted_time):
     # Console Server Status Section
     server_embed.add_field(
         name="🎮 **___CONSOLE SERVERS___**",
-        value="No data available" if not console_server_data else "",
+        value="",
         inline=False
     )
 
     for platform, data in console_server_data.items():
-        status = data.get('Status', 'UNKNOWN').upper()
+        status = data['Status'].upper()
         emoji = status_emojis.get(status, "⚪")
         server_embed.add_field(
             name=f"{platform}",
             value=f"```{emoji} {status}```",
             inline=True
         )
-
     server_embed.set_footer(
         text=f"last updated {formatted_time} ET"
     )
-    # Set thumbnail (using Apex logo or any relevant image)
+        # Set thumbnail (using Apex logo or any relevant image)
     rank_img_url = "https://upload.wikimedia.org/wikipedia/commons/b/b1/Apex_legends_simple_logo.jpg"
     server_embed.set_thumbnail(url=rank_img_url)
-
     return server_embed
 
 
@@ -590,11 +587,14 @@ async def create_server_status_embed(formatted_time):
 @bot.tree.command(name="register_server_status", description="Registers server status channel and updates the status message")
 @app_commands.checks.has_role(admin)
 async def register_server_status(interaction: discord.Interaction):
-    apex_server_status_channel = interaction.channel.id
+    # Try to defer, if it fails the interaction has expired
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.HTTPException):
+        # Interaction already expired, we can't respond
+        return
     
-    await interaction.response.defer(ephemeral=True)
-
-    await fetch_api_data()  # Ensure API data is fresh
+    apex_server_status_channel = interaction.channel.id
 
     async with aiosqlite.connect('server.db') as db:
         async with db.execute("SELECT apex_server_message_id FROM servers WHERE discord_server_id = ?", (interaction.guild.id,)) as cursor:
@@ -605,23 +605,20 @@ async def register_server_status(interaction: discord.Interaction):
         await save_server_config(db=db, discord_server_id=interaction.guild.id, apex_server_channel_id=apex_server_status_channel)
         await db.commit()
 
-    await interaction.response.send_message(f"Server status channel ID {apex_server_status_channel} saved to database!", ephemeral=True)
-
     channel = bot.get_channel(apex_server_status_channel)
     if not channel:
         await interaction.followup.send("❌ Could not find the specified channel.", ephemeral=True)
         return
 
+    # Fetch API data before creating the embed
+    await fetch_api_data()
+
     # Add timestamp and footer (matching your original format)
     now_et = datetime.now(et)
     formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
-    # Create the server embed
-    server_embed = await create_server_status_embed(formatted_time)
-
-    if not server_embed:
-        await interaction.followup.send("❌ Failed to create server status embed.", ephemeral=True)
-        return
+    # Create the server embed here to ensure it's always defined
+    server_embed = create_server_status_embed(formatted_time)
 
     # Check if a message already exists and edit it, otherwise send a new one
     if apex_server_message_id:
@@ -640,6 +637,13 @@ async def register_server_status(interaction: discord.Interaction):
             (message.id, interaction.guild.id)
         )
         await db.commit()
+    
+    # Send success message at the end
+    try:
+        await interaction.followup.send(f"✅ Server status channel ID {apex_server_status_channel} saved and message updated!", ephemeral=True)
+    except discord.errors.NotFound:
+        # Interaction expired, but the operation still completed successfully
+        pass
 #needs to throw error if the user is registered already (done by checking discord id)
 
 @bot.tree.command(name="register", description="Registers your Apex UID and server ID(for xbox/ps use gamertag & pc use Origin gamertag)")
