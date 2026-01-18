@@ -768,6 +768,7 @@ bot.run(DiscordTOKEN)
 #Priority 1
 # implement error handling for api requests
 #add steam api usage for automatic rp tracking on pc platform
+# fix db so that stats uses discord server uid and users uid to allow same user in different servers
 
 #Priority 2
 # implement unregister command to delete user from db
