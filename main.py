@@ -308,7 +308,7 @@ async def on_ready():
     print(f"Console servers: {len(console_server_data)} platforms")
     
     bot.loop.create_task(update_stats_periodically())
-    bot.loop.create_task(update_server_stats_periodically())
+    #bot.loop.create_task(update_server_stats_periodically())
 
     print(f'✅ {bot.user.name} is online and connected to Discord!')
 
