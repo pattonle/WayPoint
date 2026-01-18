@@ -518,6 +518,7 @@ def create_server_status_embed(formatted_time):
         "SOUTHAMERICA": "🌍"
     }
 
+    # Create the embed
     server_embed = discord.Embed(
         title=" **APEX LEGENDS SERVER STATUS**",
         description="Real-time server status and connectivity",
@@ -527,12 +528,12 @@ def create_server_status_embed(formatted_time):
     # Matchmaking Server Status Section
     server_embed.add_field(
         name="🛠️ **___MATCHMAKING SERVERS___**",
-        value="",
+        value="No data available" if not matchmaking_server_data else "",
         inline=False
     )
 
     for region, data in matchmaking_server_data.items():
-        status = data['Status'].upper()  # Get the status and convert to uppercase
+        status = data.get('Status', 'UNKNOWN').upper()  # Get the status and convert to uppercase
         emoji = status_emojis.get(status, "⚪")  # Default to white circle if status is unknown
         flag = region_flags.get(region.upper(), "❓")  # Default to question mark if region is unknown
         server_embed.add_field(
@@ -544,12 +545,12 @@ def create_server_status_embed(formatted_time):
     # Crossplay Server Status Section
     server_embed.add_field(
         name="🔗 **___CROSSPLAY SERVERS___**",
-        value="",
+        value="No data available" if not crossplay_server_data else "",
         inline=False
     )
 
     for region, data in crossplay_server_data.items():
-        status = data['Status'].upper()
+        status = data.get('Status', 'UNKNOWN').upper()
         emoji = status_emojis.get(status, "⚪")
         flag = region_flags.get(region.upper(), "❓")
         server_embed.add_field(
@@ -561,24 +562,26 @@ def create_server_status_embed(formatted_time):
     # Console Server Status Section
     server_embed.add_field(
         name="🎮 **___CONSOLE SERVERS___**",
-        value="",
+        value="No data available" if not console_server_data else "",
         inline=False
     )
 
     for platform, data in console_server_data.items():
-        status = data['Status'].upper()
+        status = data.get('Status', 'UNKNOWN').upper()
         emoji = status_emojis.get(status, "⚪")
         server_embed.add_field(
             name=f"{platform}",
             value=f"```{emoji} {status}```",
             inline=True
         )
+
     server_embed.set_footer(
         text=f"last updated {formatted_time} ET"
     )
-        # Set thumbnail (using Apex logo or any relevant image)
+    # Set thumbnail (using Apex logo or any relevant image)
     rank_img_url = "https://upload.wikimedia.org/wikipedia/commons/b/b1/Apex_legends_simple_logo.jpg"
     server_embed.set_thumbnail(url=rank_img_url)
+
     return server_embed
 
 
@@ -586,7 +589,6 @@ def create_server_status_embed(formatted_time):
 @bot.tree.command(name="register_server_status", description="Registers server status channel and updates the status message")
 @app_commands.checks.has_role(admin)
 async def register_server_status(interaction: discord.Interaction):
-
     apex_server_status_channel = interaction.channel.id
 
     async with aiosqlite.connect('server.db') as db:
@@ -605,13 +607,16 @@ async def register_server_status(interaction: discord.Interaction):
         await interaction.followup.send("❌ Could not find the specified channel.", ephemeral=True)
         return
 
-    
     # Add timestamp and footer (matching your original format)
     now_et = datetime.now(et)
     formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
     # Create the server embed
     server_embed = create_server_status_embed(formatted_time)
+
+    if not server_embed:
+        await interaction.followup.send("❌ Failed to create server status embed.", ephemeral=True)
+        return
 
     # Check if a message already exists and edit it, otherwise send a new one
     if apex_server_message_id:
