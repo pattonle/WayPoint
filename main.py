@@ -299,6 +299,7 @@ async def create_player_stats_embed(platform, apex_uid,formatted_time):
 async def on_ready():
     await bot.tree.sync() # Sync commands with Discord
     await fetch_api_data()  # Initialize API data on startup
+    print("im gonna fucking lose it!")
     bot.loop.create_task(update_stats_periodically())
     bot.loop.create_task(update_server_stats_periodically())
 
@@ -586,7 +587,6 @@ def create_server_status_embed(formatted_time):
 @bot.tree.command(name="register_server_status", description="Registers server status channel and updates the status message")
 @app_commands.checks.has_role(admin)
 async def register_server_status(interaction: discord.Interaction):
-
     apex_server_status_channel = interaction.channel.id
 
     async with aiosqlite.connect('server.db') as db:
@@ -605,17 +605,20 @@ async def register_server_status(interaction: discord.Interaction):
         await interaction.followup.send("❌ Could not find the specified channel.", ephemeral=True)
         return
 
-    
+    # Fetch API data before creating the embed
+    await fetch_api_data()
+
     # Add timestamp and footer (matching your original format)
     now_et = datetime.now(et)
     formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
+    # Create the server embed here to ensure it's always defined
+    server_embed = create_server_status_embed(formatted_time)
 
     # Check if a message already exists and edit it, otherwise send a new one
     if apex_server_message_id:
         try:
             message = await channel.fetch_message(apex_server_message_id)
-            server_embed = create_server_status_embed(formatted_time)
             await message.edit(embed=server_embed)
         except discord.NotFound:
             message = await channel.send(embed=server_embed)
