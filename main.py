@@ -364,7 +364,7 @@ async def update_server_message():
             now_et = datetime.now(et)
             formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
-            updated_embed = create_server_status_embed(formatted_time)
+            updated_embed = await create_server_status_embed(formatted_time)
 
             # Edit the message
             try:
@@ -615,7 +615,7 @@ async def register_server_status(interaction: discord.Interaction):
     formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
 
     # Create the server embed
-    server_embed = create_server_status_embed(formatted_time)
+    server_embed = await create_server_status_embed(formatted_time)
 
     if not server_embed:
         await interaction.followup.send("❌ Failed to create server status embed.", ephemeral=True)
