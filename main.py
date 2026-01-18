@@ -149,7 +149,7 @@ api_endpoints = {
     "server": f"https://api.mozambiquehe.re/servers?auth={ApexAPIKey}&version=2"
 }
 
-# Initialize global variables (will be populated by fetch_api_data)
+# Initialize global variables 
 responses = {}
 map_data = {}
 ltm_data = {}
@@ -425,7 +425,7 @@ async def update_stats_message():
 async def stats(interaction: discord.Interaction):
     stats_channel = interaction.channel  # Use interaction.channel directly
     discord_id = interaction.user.id
-
+    await fetch_api_data()  # Ensure API data is fresh
     # Update current_RP
     async with aiosqlite.connect('server.db') as db:
         async with db.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,)) as cursor:
@@ -497,7 +497,8 @@ async def register_server_id(interaction: discord.Interaction):
 
     await interaction.response.send_message(f"✅ Server ID {discord_server_id} and configuration saved to the database!", ephemeral=True)
 
-def create_server_status_embed(formatted_time):
+async def create_server_status_embed(formatted_time):
+    await fetch_api_data()
     # Define a dictionary to map server statuses to emojis
     status_emojis = {
         "UP": "🟢",  
@@ -590,6 +591,8 @@ def create_server_status_embed(formatted_time):
 @app_commands.checks.has_role(admin)
 async def register_server_status(interaction: discord.Interaction):
     apex_server_status_channel = interaction.channel.id
+    
+    await fetch_api_data()  # Ensure API data is fresh
 
     async with aiosqlite.connect('server.db') as db:
         async with db.execute("SELECT apex_server_message_id FROM servers WHERE discord_server_id = ?", (interaction.guild.id,)) as cursor:
