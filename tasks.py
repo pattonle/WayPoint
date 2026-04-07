@@ -17,12 +17,12 @@ api = None
 test_id = 307923195082702848
 
 
-@tasks.loop(time=time(hour=18, minute=43, tzinfo=TIMEZONE_ET))
+@tasks.loop(time=time(hour=9, minute=0, tzinfo=TIMEZONE_ET))
 async def thermal_throttle_check():
     cpu_temp = check_cpu_temp()
     if cpu_temp is not None:
         user = await bot.fetch_user(test_id)
-        await user.send(f"🤖Daily CPU Temperature Checkin: {cpu_temp.temperature:.1f}°C")
+        await user.send(f"🤖Daily CPU Temperature: {cpu_temp.temperature:.1f}°C")
         pass
 
 
