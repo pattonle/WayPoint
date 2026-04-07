@@ -16,17 +16,20 @@ api = None
 
 test_id=307923195082702848
 
-@tasks.loop(minutes=5)
+@tasks.loop(minutes=10)
 async def thermal_throttle_check():
     cpu_temp = check_cpu_temp()
     if cpu_temp is not None:
         user = await bot.fetch_user(test_id)
-        match cpu_temp.temperature:
-            case cpu_temp.temperature if cpu_temp.temperature >= 75:
-                await user.send(f"⚠️ Warning: CPU temperature is at {cpu_temp.temperature:.1f}°C.")
-            case cpu_temp.temperature if cpu_temp.temperature <= 75:
-                await user.send(f"✅ CPU temperature is back to normal at {cpu_temp.temperature:.1f}°C.")
-                pass
+        if cpu_temp.temperature >= 80:
+            await user.send(f"🚩 URGENT Warning: CPU temperature is at {cpu_temp.temperature:.1f}°C.")
+        elif cpu_temp.temperature > 70 and cpu_temp.temperature < 80:
+            await user.send(f"⚠️ Critical Warning: CPU temperature is at {cpu_temp.temperature:.1f}°C.")
+        elif cpu_temp.temperature >= 65 and cpu_temp.temperature <= 70:
+            await user.send(f"🚩Pi is running hottern than usual. CPU temperature is at {cpu_temp.temperature:.1f}°C.")
+        else:
+            await user.send(f"✅ CPU temperature is normal at {cpu_temp.temperature:.1f}°C.")
+        pass
 
 @thermal_throttle_check.before_loop
 async def before_thermal_throttle_check():
