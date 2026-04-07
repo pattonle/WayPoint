@@ -6,12 +6,38 @@ from discord.ext import tasks
 from datetime import datetime
 from config import TIMEZONE_ET
 from embeds import create_player_stats_embed, create_server_status_embed
+from utils import check_cpu_temp
 
 
 # Global references (will be set by setup_tasks)
 bot = None
 db = None
 api = None
+
+test_id=307923195082702848
+
+@tasks.loop(minutes=5)
+async def thermal_throttle_check():
+    cpu_temp = check_cpu_temp()
+    if cpu_temp is not None:
+        user = await bot.fetch_user(test_id)
+        match cpu_temp.temperature:
+            case cpu_temp.temperature if cpu_temp.temperature >= 75:
+                await user.send(f"⚠️ Warning: CPU temperature is at {cpu_temp.temperature:.1f}°C.")
+            case cpu_temp.temperature if cpu_temp.temperature <= 75:
+                await user.send(f"✅ CPU temperature is back to normal at {cpu_temp.temperature:.1f}°C.")
+                pass
+
+@thermal_throttle_check.before_loop
+async def before_thermal_throttle_check():
+
+
+    await bot.wait_until_ready()
+
+@thermal_throttle_check.error
+async def thermal_throttle_check_error_handler(error):
+    """Handle errors in the server stats update task."""
+    print(f"❌ Server stats update task error: {error}")
 
 
 @tasks.loop(minutes=1)
@@ -158,3 +184,7 @@ def setup_tasks(bot_instance, db_instance, api_instance):
     if not update_server_stats_periodically.is_running():
         update_server_stats_periodically.start()
         print("✅ Started server stats update task")
+
+    if not thermal_throttle_check.is_running():
+        thermal_throttle_check.start()
+        print("✅ Started thermal throttle check task")

@@ -28,7 +28,7 @@ async def create_player_stats_embed(platform, apex_uid, formatted_time, api):
     # Determine embed color based on rank
     rank_name_lower = ranked_data['rankName'].lower()
     if "predator" in rank_name_lower:
-        colour = discord.Colour.gold()
+        colour = discord.Colour.red()
     elif "master" in rank_name_lower:
         colour = discord.Colour.purple()
     elif "diamond" in rank_name_lower:
@@ -36,7 +36,7 @@ async def create_player_stats_embed(platform, apex_uid, formatted_time, api):
     elif "platinum" in rank_name_lower:
         colour = discord.Colour.teal()
     elif "gold" in rank_name_lower:
-        colour = discord.Colour.green()
+        colour = discord.Colour.gold()
     elif "silver" in rank_name_lower:
         colour = discord.Colour.light_grey()
     elif "bronze" in rank_name_lower:

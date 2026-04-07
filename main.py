@@ -43,11 +43,7 @@ async def on_ready():
     # Fetch initial API data
     print("⏳ Fetching initial API data...")
     await api.fetch_all_data()
-    print("✅ API data loaded successfully!")
-    print(f"  - Matchmaking servers: {len(api.matchmaking_server_data)} regions")
-    print(f"  - Crossplay servers: {len(api.crossplay_server_data)} regions")
-    print(f"  - Console servers: {len(api.console_server_data)} platforms")
-    
+
     # Set up commands
     await setup_all_commands(bot, db, api)
     
@@ -76,6 +72,7 @@ if __name__ == "__main__":
 # THINGS TO CONSIDER FOR FUTURE UPDATES
 
 # Priority 1
+#implement warning system for thermal throttling on pi
 # - implement error handling for api requests
 # - add steam api usage for automatic rp tracking on pc platform
 # - fix db so that stats uses discord server uid and users uid to allow same user in different servers

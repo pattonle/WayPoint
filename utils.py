@@ -2,8 +2,15 @@
 Utility helper functions for the WayPoint Discord bot.
 """
 from datetime import datetime
+from gpiozero import CPUTemperature
 
-
+def check_cpu_temp():
+    try:
+        cpu_temp = CPUTemperature()
+    except Exception:
+        cpu_temp = None
+    return cpu_temp
+    
 def format_time_difference(start_time, end_time):
     """
     Format time difference in a human-readable way.
