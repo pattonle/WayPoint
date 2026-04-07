@@ -3,7 +3,7 @@ Periodic tasks for the WayPoint Discord bot using discord.ext.tasks.
 """
 import discord
 from discord.ext import tasks
-from datetime import datetime
+from datetime import datetime, time
 from config import TIMEZONE_ET
 from embeds import create_player_stats_embed, create_server_status_embed
 from utils import check_cpu_temp
@@ -14,10 +14,31 @@ bot = None
 db = None
 api = None
 
-test_id=307923195082702848
+test_id = 307923195082702848
+
+
+@tasks.loop(time=time(hour=18, minute=43, tzinfo=TIMEZONE_ET))
+async def thermal_throttle_check():
+    cpu_temp = check_cpu_temp()
+    if cpu_temp is not None:
+        user = await bot.fetch_user(test_id)
+        await user.send(f"🤖Daily CPU Temperature Checkin: {cpu_temp.temperature:.1f}°C")
+        pass
+
+
+@thermal_throttle_check.before_loop
+async def before_thermal_throttle_check():
+    await bot.wait_until_ready()
+
+
+@thermal_throttle_check.error
+async def thermal_throttle_check_error_handler(error):
+    """Handle errors in the thermal throttle check task."""
+    print(f"❌ Thermal throttle check task error: {error}")
+
 
 @tasks.loop(minutes=10)
-async def thermal_throttle_check():
+async def thermal_throttle_alert():
     cpu_temp = check_cpu_temp()
     if cpu_temp is not None:
         user = await bot.fetch_user(test_id)
@@ -27,21 +48,19 @@ async def thermal_throttle_check():
             await user.send(f"⚠️ Critical Warning: CPU temperature is at {cpu_temp.temperature:.1f}°C.")
         elif cpu_temp.temperature >= 65 and cpu_temp.temperature <= 70:
             await user.send(f"🚩Pi is running hottern than usual. CPU temperature is at {cpu_temp.temperature:.1f}°C.")
-        else:
-            await user.send(f"✅ CPU temperature is normal at {cpu_temp.temperature:.1f}°C.")
+
         pass
 
-@thermal_throttle_check.before_loop
-async def before_thermal_throttle_check():
 
-
+@thermal_throttle_alert.before_loop
+async def before_thermal_throttle_alert():
     await bot.wait_until_ready()
 
-@thermal_throttle_check.error
-async def thermal_throttle_check_error_handler(error):
-    """Handle errors in the server stats update task."""
-    print(f"❌ Server stats update task error: {error}")
 
+@thermal_throttle_alert.error
+async def thermal_throttle_alert_error_handler(error):
+    """Handle errors in the thermal throttle alert task."""
+    print(f"❌ Thermal throttle alert task error: {error}")
 
 @tasks.loop(minutes=1)
 async def update_stats_periodically():
@@ -94,6 +113,18 @@ async def update_stats_periodically():
         print(f"❌ Error in update_stats_periodically: {e}")
 
 
+@update_stats_periodically.before_loop
+async def before_update_stats():
+    """Wait for the bot to be ready before starting the stats update loop."""
+    await bot.wait_until_ready()
+
+
+@update_stats_periodically.error
+async def stats_error_handler(error):
+    """Handle errors in the stats update task."""
+    print(f"❌ Stats update task error: {error}")
+
+
 @tasks.loop(minutes=5)
 async def update_server_stats_periodically():
     """Update server status embeds every 5 minutes."""
@@ -141,23 +172,10 @@ async def update_server_stats_periodically():
         print(f"❌ Error in update_server_stats_periodically: {e}")
 
 
-@update_stats_periodically.before_loop
-async def before_update_stats():
-    """Wait for the bot to be ready before starting the stats update loop."""
-    await bot.wait_until_ready()
-
-
 @update_server_stats_periodically.before_loop
 async def before_update_server_stats():
     """Wait for the bot to be ready before starting the server stats update loop."""
     await bot.wait_until_ready()
-
-
-@update_stats_periodically.error
-async def stats_error_handler(error):
-    """Handle errors in the stats update task."""
-    print(f"❌ Stats update task error: {error}")
-
 
 @update_server_stats_periodically.error
 async def server_stats_error_handler(error):
@@ -188,6 +206,11 @@ def setup_tasks(bot_instance, db_instance, api_instance):
         update_server_stats_periodically.start()
         print("✅ Started server stats update task")
 
+    if not thermal_throttle_alert.is_running():
+        thermal_throttle_alert.start()
+        print("✅ Started thermal throttle alert task")
+    
     if not thermal_throttle_check.is_running():
         thermal_throttle_check.start()
         print("✅ Started thermal throttle check task")
+    
