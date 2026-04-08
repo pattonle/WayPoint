@@ -141,16 +141,13 @@ Ends RP tracking and displays session results.
 
 ### Admin Commands
 
-#### `/register_server_id`
-Manually registers the current Discord server in the database.
-- **Permissions**: Requires "Admin" role
-- **Note**: Auto-registration occurs when bot joins, making this mostly redundant
-
-#### `/register_server_status`
+#### `/apex_status`
 Sets up automatic server status updates in a channel.
 - **Permissions**: Requires "Admin" role
 - **Action**: Posts a server status embed that auto-updates every 5 minutes
 - **Behavior**: Edits existing message or creates new one if not found
+
+`/register_server_id` was removed because server registration is handled automatically when the bot joins a server.
 
 ---
 

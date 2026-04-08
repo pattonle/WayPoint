@@ -29,34 +29,13 @@ async def setup(bot_instance, db_instance, api_instance):
     api = api_instance
     
     # Register commands
-    bot.tree.add_command(register_server_id)
-    bot.tree.add_command(register_server_status)
+    bot.tree.add_command(apex_status)
     
     print("✅ Admin commands registered")
 
-
-@app_commands.command(name="register_server_id", description="Saves server ID and configuration to the database")
+@app_commands.command(name="apex_status", description="Registers server status channel and updates the status message")
 @app_commands.checks.has_role(ADMIN_ROLE)
-async def register_server_id(interaction: discord.Interaction):
-    """
-    Register the current Discord server in the database.
-    
-    Args:
-        interaction: Discord interaction
-    """
-    discord_server_id = interaction.guild.id
-    
-    await db.save_server_config(discord_server_id=discord_server_id)
-    
-    await interaction.response.send_message(
-        f"✅ Server ID {discord_server_id} and configuration saved to the database!",
-        ephemeral=True
-    )
-
-
-@app_commands.command(name="register_server_status", description="Registers server status channel and updates the status message")
-@app_commands.checks.has_role(ADMIN_ROLE)
-async def register_server_status(interaction: discord.Interaction):
+async def apex_status(interaction: discord.Interaction):
     """
     Register a channel for server status updates and post the initial status message.
     

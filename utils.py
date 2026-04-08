@@ -2,10 +2,10 @@
 Utility helper functions for the WayPoint Discord bot.
 """
 from datetime import datetime
-from gpiozero import CPUTemperature
 
 def check_cpu_temp():
     try:
+        from gpiozero import CPUTemperature
         cpu_temp = CPUTemperature()
     except Exception:
         cpu_temp = None
