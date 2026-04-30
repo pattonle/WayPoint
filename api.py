@@ -3,7 +3,9 @@ API operations using aiohttp for the WayPoint Discord bot.
 """
 import aiohttp
 from datetime import datetime, timedelta
+import requests
 from config import API_ENDPOINTS, PLAYER_BRIDGE_URL
+
 
 
 class API:
@@ -136,3 +138,10 @@ class API:
         elif platform == "PS4" and 'PS4' in self.predcap_data:
             return self.predcap_data['PS4']['val']
         return 0
+
+def get_player_game(player_id):
+    url= API_ENDPOINTS['steam_game'].format(steam_id=player_id)
+    response = requests.get(url)
+    data = response.json()
+    player_game_id=data['response']['players'][0].get('gameid')
+    return player_game_id

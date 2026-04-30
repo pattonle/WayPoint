@@ -53,7 +53,6 @@ async def on_ready():
     
     # Start periodic tasks
     setup_tasks(bot, db, api)
-    
     print(f'✅ {bot.user.name} is online and connected to Discord!')
 
 
@@ -72,9 +71,9 @@ if __name__ == "__main__":
 # THINGS TO CONSIDER FOR FUTURE UPDATES
 
 # Priority 1
-#implement warning system for thermal throttling on pi
+# 
 # - implement error handling for api requests
-# - add steam api usage for automatic rp tracking on pc platform
+# - add steam api usage for automatic rp tracking on pc platform (if rp==0 ignore )
 # - fix db so that stats uses discord server uid and users uid to allow same user in different servers
 # - implement leaderboard command to view top 3 players in server by rp 
 
