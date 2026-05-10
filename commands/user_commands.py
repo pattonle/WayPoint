@@ -255,7 +255,7 @@ async def getsteam(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
     try:
-        player = await api.get_steam_player_async(steam_id)
+        player = await get_steam_player_async(steam_id)
     except Exception:
         player = None
 
@@ -283,9 +283,15 @@ async def setsteam(interaction: discord.Interaction, steamid: str):
 
     await interaction.response.defer(ephemeral=True)
 
+    # Check if user is registered first
+    user = await db.get_user(discord_id)
+    if user is None:
+        await interaction.followup.send("❌ You are not registered. Use /register first.", ephemeral=True)
+        return
+
     # Validate via Steam API (accepts SteamID64 or vanity)
     try:
-        player = await api.get_steam_player_async(steamid)
+        player = await get_steam_player_async(steamid)
     except Exception as e:
         player = None
 
@@ -297,7 +303,10 @@ async def setsteam(interaction: discord.Interaction, steamid: str):
     persona = player.get('personaname')
 
     try:
-        await db.update_user_steam_id(discord_id, resolved_steamid)
-        await interaction.followup.send(f"✅ Saved Steam ID {resolved_steamid} for `{persona}`.", ephemeral=True)
+        success = await db.update_user_steam_id(discord_id, resolved_steamid)
+        if success:
+            await interaction.followup.send(f"✅ Saved Steam ID {resolved_steamid} for `{persona}`.", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ Failed to save Steam ID (user not found in database).", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"❌ Failed to save Steam ID: {e}", ephemeral=True)

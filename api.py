@@ -4,7 +4,7 @@ API operations using aiohttp for the WayPoint Discord bot.
 import aiohttp
 from datetime import datetime, timedelta
 import requests
-from config import API_ENDPOINTS, PLAYER_BRIDGE_URL
+from config import API_ENDPOINTS, PLAYER_BRIDGE_URL, STEAM_API_KEY
 
 
 

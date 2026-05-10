@@ -281,7 +281,7 @@ async def apex_play_monitor():
                         print(f"✉️ Sent session summary to {discord_id}: {delta} RP")
                     except Exception as e:
                         print(f"❌ Failed to send DM to {discord_id}: {e}")
-zd
+
     except Exception as e:
         print(f"❌ Error in apex_play_monitor: {e}")
 

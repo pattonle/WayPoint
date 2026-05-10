@@ -112,7 +112,7 @@ class Database:
 
     async def update_user_steam_id(self, discord_id, steam_id):
         """
-        Update a user's Steam ID.
+        Update a user's Steam ID. Returns True if a row was updated, False otherwise.
         """
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
@@ -120,6 +120,7 @@ class Database:
                 (steam_id, discord_id)
             )
             await db.commit()
+            return db.total_changes > 0
 
     async def set_session_start(self, discord_id, start_RP, start_time):
         """
