@@ -145,3 +145,72 @@ def get_player_game(player_id):
     data = response.json()
     player_game_id=data['response']['players'][0].get('gameid')
     return player_game_id
+
+    
+async def get_player_game_async(player_id):
+    """
+    Async wrapper to get the currently-running gameid for a Steam player.
+    Returns the `gameid` (string) or None if not in-game / on error.
+    """
+    url = API_ENDPOINTS['steam_game'].format(steam_id=player_id)
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url) as resp:
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception:
+                    text = await resp.text()
+                    print(f"⚠️ Non-JSON Steam response: {text[:200]}")
+                    return None
+                players = data.get('response', {}).get('players', [])
+                if not players:
+                    return None
+                return players[0].get('gameid')
+        except Exception as e:
+            print(f"❌ Failed to fetch Steam player data for {player_id}: {e}")
+            return None
+
+
+async def resolve_vanity_async(vanity):
+    """
+    Resolve a Steam vanity URL to a SteamID64 using the Steam Web API.
+    Returns the SteamID64 string or None on failure.
+    """
+    url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={STEAM_API_KEY}&vanityurl={vanity}"
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url) as resp:
+                data = await resp.json(content_type=None)
+                response = data.get('response', {})
+                if response.get('success') == 1:
+                    return response.get('steamid')
+                return None
+        except Exception as e:
+            print(f"❌ Failed to resolve vanity URL {vanity}: {e}")
+            return None
+
+
+async def get_steam_player_async(steam_identifier):
+    """
+    Get Steam player summary for a SteamID64 or vanity name.
+    Returns the player dict from GetPlayerSummaries or None.
+    """
+    # If identifier isn't numeric, try to resolve as vanity
+    steam_id = steam_identifier
+    if not str(steam_identifier).isdigit():
+        steam_id = await resolve_vanity_async(steam_identifier)
+        if steam_id is None:
+            return None
+
+    url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={steam_id}"
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url) as resp:
+                data = await resp.json(content_type=None)
+                players = data.get('response', {}).get('players', [])
+                if not players:
+                    return None
+                return players[0]
+        except Exception as e:
+            print(f"❌ Failed to fetch Steam player summary for {steam_id}: {e}")
+            return None

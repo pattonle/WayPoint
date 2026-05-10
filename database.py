@@ -36,6 +36,10 @@ class Database:
                     time_registered TIMESTAMP,
                     stats_message_id INTEGER,
                     stats_channel_id INTEGER
+                    ,steam_id TEXT
+                    ,session_start_RP INTEGER
+                    ,session_start_time TIMESTAMP
+                    ,is_in_game INTEGER DEFAULT 0
                 )
             ''')
             
@@ -54,6 +58,14 @@ class Database:
                 migrations.append("ALTER TABLE users ADD COLUMN stats_message_id INTEGER")
             if 'stats_channel_id' not in cols:
                 migrations.append("ALTER TABLE users ADD COLUMN stats_channel_id INTEGER")
+            if 'steam_id' not in cols:
+                migrations.append("ALTER TABLE users ADD COLUMN steam_id TEXT")
+            if 'session_start_RP' not in cols:
+                migrations.append("ALTER TABLE users ADD COLUMN session_start_RP INTEGER")
+            if 'session_start_time' not in cols:
+                migrations.append("ALTER TABLE users ADD COLUMN session_start_time TIMESTAMP")
+            if 'is_in_game' not in cols:
+                migrations.append("ALTER TABLE users ADD COLUMN is_in_game INTEGER DEFAULT 0")
             
             for migration in migrations:
                 await db.execute(migration)
@@ -96,6 +108,39 @@ class Database:
                     apex_uid=excluded.apex_uid,
                     platform=excluded.platform
             ''', (discord_id, discord_server_id, apex_uid, platform, current_RP))
+            await db.commit()
+
+    async def update_user_steam_id(self, discord_id, steam_id):
+        """
+        Update a user's Steam ID.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE users SET steam_id = ? WHERE discord_id = ?",
+                (steam_id, discord_id)
+            )
+            await db.commit()
+
+    async def set_session_start(self, discord_id, start_RP, start_time):
+        """
+        Mark the user as in-game and record session start RP/time.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE users SET session_start_RP = ?, session_start_time = ?, is_in_game = 1 WHERE discord_id = ?",
+                (start_RP, start_time, discord_id)
+            )
+            await db.commit()
+
+    async def set_session_end(self, discord_id, final_RP, end_time):
+        """
+        Mark the user as not in-game, update current RP, and clear session fields.
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "UPDATE users SET current_RP = ?, time_registered = ?, session_start_RP = NULL, session_start_time = NULL, is_in_game = 0 WHERE discord_id = ?",
+                (final_RP, end_time, discord_id)
+            )
             await db.commit()
     
     async def get_all_users(self):

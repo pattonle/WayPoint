@@ -33,3 +33,26 @@ def format_time_difference(start_time, end_time):
         return f"{days} days, {hours} hours, {minutes} minutes, {seconds} seconds"
     else:
         return f"{hours} hours, {minutes} minutes, {seconds} seconds"
+
+
+def format_rp_per_hour(rp_change, start_time, end_time):
+    """
+    Format RP change as an hourly average.
+
+    Args:
+        rp_change (int): Signed RP change over the session
+        start_time (datetime): The starting timestamp
+        end_time (datetime): The ending timestamp
+
+    Returns:
+        str: Signed RP-per-hour string
+    """
+    elapsed_seconds = (end_time - start_time).total_seconds()
+    if elapsed_seconds <= 0:
+        return "0.0 RP/hr"
+
+    rp_per_hour = rp_change / (elapsed_seconds / 3600)
+    if rp_per_hour == 0:
+        return "0.0 RP/hr"
+
+    return f"{rp_per_hour:+.1f} RP/hr"

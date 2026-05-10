@@ -6,7 +6,8 @@ from discord import app_commands
 from datetime import datetime
 from config import TIMEZONE_ET, ADMIN_ROLE
 from embeds import create_player_stats_embed, create_admin_stats_embed
-from utils import format_time_difference
+from utils import format_time_difference, format_rp_per_hour
+from api import get_steam_player_async
 
 
 
@@ -34,6 +35,7 @@ async def setup(bot_instance, db_instance, api_instance):
     bot.tree.add_command(register_user)
     bot.tree.add_command(stats)
     bot.tree.add_command(track)
+    bot.tree.add_command(setsteam)
     
     print("✅ User commands registered")
 
@@ -90,8 +92,15 @@ async def stats(interaction: discord.Interaction):
         )
         return
     
-    # Unpack user data
-    discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered, stats_message_id, stats_channel_id = user
+    # Unpack user data (support legacy and extended schemas)
+    discord_id = user[0]
+    discord_server_id = user[1] if len(user) > 1 else None
+    apex_uid = user[2] if len(user) > 2 else None
+    platform = user[3] if len(user) > 3 else None
+    current_RP = user[4] if len(user) > 4 else None
+    time_registered = user[5] if len(user) > 5 else None
+    stats_message_id = user[6] if len(user) > 6 else None
+    stats_channel_id = user[7] if len(user) > 7 else None
     
     # Acknowledge the interaction immediately
     await interaction.response.send_message("🔄 Updating your stats...", ephemeral=True, delete_after=2)
@@ -153,7 +162,14 @@ async def track(interaction: discord.Interaction):
         )
         return
 
-    discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered, stats_message_id, stats_channel_id = user
+    discord_id = user[0]
+    discord_server_id = user[1] if len(user) > 1 else None
+    apex_uid = user[2] if len(user) > 2 else None
+    platform = user[3] if len(user) > 3 else None
+    current_RP = user[4] if len(user) > 4 else None
+    time_registered = user[5] if len(user) > 5 else None
+    stats_message_id = user[6] if len(user) > 6 else None
+    stats_channel_id = user[7] if len(user) > 7 else None
 
     # Fetch current RP from API
     try:
@@ -179,7 +195,10 @@ async def track(interaction: discord.Interaction):
         else:
             start_time = time_registered
 
-        time_played = format_time_difference(start_time, datetime.now(TIMEZONE_ET))
+        end_time = datetime.now(TIMEZONE_ET)
+        time_played = format_time_difference(start_time, end_time)
+        rp_change = apex_rp - current_RP if current_RP is not None else 0
+        avg_rp_per_hour = format_rp_per_hour(rp_change, start_time, end_time)
 
         # Update current RP and clear tracking start time
         await db.update_user_tracking(discord_id, apex_rp, None)
@@ -193,17 +212,17 @@ async def track(interaction: discord.Interaction):
 
         if current_RP < apex_rp:
             await interaction.response.send_message(
-                f"✅ Tracking ended — current RP: {apex_rp}. Gained {apex_rp - current_RP} RP in {time_played}",
+                f"✅ Tracking ended — current RP: {apex_rp}. Gained {apex_rp - current_RP} RP in {time_played} ({avg_rp_per_hour})",
                 ephemeral=True,
             )
         elif current_RP > apex_rp:
             await interaction.response.send_message(
-                f"✅ Tracking ended — current RP: {apex_rp}. Lost {current_RP - apex_rp} RP in {time_played}",
+                f"✅ Tracking ended — current RP: {apex_rp}. Lost {current_RP - apex_rp} RP in {time_played} ({avg_rp_per_hour})",
                 ephemeral=True,
             )
         else:
             await interaction.response.send_message(
-                f"✅ Tracking ended — current RP: {apex_rp}. No RP gained or lost in {time_played}",
+                f"✅ Tracking ended — current RP: {apex_rp}. No RP gained or lost in {time_played} ({avg_rp_per_hour})",
                 ephemeral=True,
             )
 
@@ -212,3 +231,73 @@ async def track(interaction: discord.Interaction):
     # Otherwise, tracking is inactive -> start tracking
     await db.update_user_tracking(discord_id, apex_rp, datetime.now(TIMEZONE_ET))
     await interaction.response.send_message(f"✅ Tracking started — current RP: {apex_rp}", ephemeral=True)
+
+
+@app_commands.command(name="getsteam", description="Show your saved Steam profile (ephemeral)")
+async def getsteam(interaction: discord.Interaction):
+    """
+    Display the invoking user's saved Steam info (name, id, avatar) ephemeral.
+    """
+    discord_id = interaction.user.id
+    user = await db.get_user(discord_id)
+
+    if user is None:
+        await interaction.response.send_message("❌ You are not registered. Use /register first.", ephemeral=True)
+        return
+
+    # safe unpack
+    steam_id = user[8] if len(user) > 8 else None
+
+    if not steam_id:
+        await interaction.response.send_message("❌ No Steam ID saved. Set one with /setsteam.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        player = await api.get_steam_player_async(steam_id)
+    except Exception:
+        player = None
+
+    if player is None:
+        await interaction.followup.send(f"⚠️ Steam ID {steam_id} saved but profile could not be fetched (may be private).", ephemeral=True)
+        return
+
+    persona = player.get('personaname', 'Unknown')
+    avatar = player.get('avatarfull') or player.get('avatar')
+    profile_url = f"https://steamcommunity.com/profiles/{player.get('steamid')}"
+
+    embed = discord.Embed(title=f"Steam: {persona}", description=f"ID: {player.get('steamid')}\n[Profile]({profile_url})", color=discord.Colour.blue())
+    if avatar:
+        embed.set_thumbnail(url=avatar)
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@app_commands.command(name="setsteam", description="Register your SteamID64 for Apex monitoring")
+async def setsteam(interaction: discord.Interaction, steamid: str):
+    """
+    Save the invoking user's SteamID64 to the database for Apex play monitoring.
+    """
+    discord_id = interaction.user.id
+
+    await interaction.response.defer(ephemeral=True)
+
+    # Validate via Steam API (accepts SteamID64 or vanity)
+    try:
+        player = await api.get_steam_player_async(steamid)
+    except Exception as e:
+        player = None
+
+    if player is None:
+        await interaction.followup.send("❌ Could not validate that Steam ID/vanity exists. Please provide a valid SteamID64 or vanity name.", ephemeral=True)
+        return
+
+    resolved_steamid = player.get('steamid')
+    persona = player.get('personaname')
+
+    try:
+        await db.update_user_steam_id(discord_id, resolved_steamid)
+        await interaction.followup.send(f"✅ Saved Steam ID {resolved_steamid} for `{persona}`.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Failed to save Steam ID: {e}", ephemeral=True)

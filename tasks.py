@@ -5,6 +5,7 @@ import discord
 from discord.ext import tasks
 from datetime import datetime, time
 from config import TIMEZONE_ET
+from api import get_player_game_async
 from embeds import create_player_stats_embed, create_server_status_embed
 from utils import check_cpu_temp
 
@@ -69,9 +70,19 @@ async def update_stats_periodically():
         await api.fetch_all_data()  # Re-fetch API data
         
         users = await db.get_all_users()
-        
+
         for user in users:
-            discord_id, discord_server_id, apex_uid, platform, current_RP, time_registered, stats_message_id, stats_channel_id = user
+            # Handle multiple schema versions safely by index mapping
+            # Expected columns: discord_id, discord_server_id, apex_uid, platform, current_RP,
+            # time_registered, stats_message_id, stats_channel_id, steam_id, session_start_RP, session_start_time, is_in_game
+            discord_id = user[0]
+            discord_server_id = user[1] if len(user) > 1 else None
+            apex_uid = user[2] if len(user) > 2 else None
+            platform = user[3] if len(user) > 3 else None
+            current_RP = user[4] if len(user) > 4 else None
+            time_registered = user[5] if len(user) > 5 else None
+            stats_message_id = user[6] if len(user) > 6 else None
+            stats_channel_id = user[7] if len(user) > 7 else None
             
             # Skip if no message ID set
             if not stats_message_id or not stats_channel_id:
@@ -183,6 +194,108 @@ async def server_stats_error_handler(error):
     print(f"❌ Server stats update task error: {error}")
 
 
+@tasks.loop(seconds=60)
+async def apex_play_monitor():
+    """
+    Monitor users' Steam status; when they start playing Apex (appid=1172470)
+    record their RP. When they stop playing, send a DM summarizing RP change.
+    """
+    try:
+        users = await db.get_all_users()
+        for user in users:
+            # Map fields safely (see update_stats_periodically)
+            discord_id = user[0]
+            apex_uid = user[2] if len(user) > 2 else None
+            platform = user[3] if len(user) > 3 else None
+            current_RP = user[4] if len(user) > 4 else None
+            time_registered = user[5] if len(user) > 5 else None
+            steam_id = user[8] if len(user) > 8 else None
+            session_start_RP = user[9] if len(user) > 9 else None
+            session_start_time = user[10] if len(user) > 10 else None
+            is_in_game = bool(user[11]) if len(user) > 11 and user[11] is not None else False
+
+            # Need a Steam ID to check game; skip otherwise
+            if not steam_id:
+                continue
+
+            # Check current Steam game
+            try:
+                gameid = await get_player_game_async(steam_id)
+            except Exception as e:
+                print(f"❌ Failed to get Steam game for {steam_id}: {e}")
+                continue
+
+            # Normalize comparison
+            if gameid is not None and str(gameid) == '1172470':
+                # Player is in Apex
+                if not is_in_game:
+                    # Starting session; fetch current RP and record start
+                    try:
+                        player_data = await api.fetch_player_stats(apex_uid, platform)
+                        rp = player_data['global']['rank']['rankScore']
+                    except Exception as e:
+                        print(f"❌ Failed to fetch RP for {apex_uid}: {e}")
+                        continue
+
+                    now = datetime.now(TIMEZONE_ET)
+                    await db.set_session_start(discord_id, rp, now)
+                    print(f"▶️ Recorded session start for {discord_id}: {rp} RP at {now}")
+                else:
+                    # already in-game; optionally update current_RP
+                    pass
+            else:
+                # Player not in Apex. If they were in-game, end session and notify
+                if is_in_game:
+                    try:
+                        player_data = await api.fetch_player_stats(apex_uid, platform)
+                        final_rp = player_data['global']['rank']['rankScore']
+                    except Exception as e:
+                        print(f"❌ Failed to fetch final RP for {apex_uid}: {e}")
+                        final_rp = current_RP if current_RP is not None else 0
+
+                    now = datetime.now(TIMEZONE_ET)
+                    # Compute delta
+                    if session_start_RP is None:
+                        delta = final_rp - (current_RP or 0)
+                    else:
+                        delta = final_rp - session_start_RP
+
+                    # Update DB to end session
+                    await db.set_session_end(discord_id, final_rp, now)
+
+                    # Notify user via DM
+                    try:
+                        user_obj = await bot.fetch_user(discord_id)
+                        duration = "unknown"
+                        if session_start_time:
+                            try:
+                                # session_start_time stored as ISO or sqlite timestamp; display simple diff
+                                duration_td = now - datetime.fromisoformat(session_start_time) if isinstance(session_start_time, str) else now - session_start_time
+                                minutes = int(duration_td.total_seconds() // 60)
+                                duration = f"{minutes}m"
+                            except Exception:
+                                duration = "unknown"
+
+                        sign = "gained" if delta >= 0 else "lost"
+                        await user_obj.send(f"🎮 You {sign} {abs(delta)} RP in {duration}")
+                        print(f"✉️ Sent session summary to {discord_id}: {delta} RP")
+                    except Exception as e:
+                        print(f"❌ Failed to send DM to {discord_id}: {e}")
+zd
+    except Exception as e:
+        print(f"❌ Error in apex_play_monitor: {e}")
+
+
+@apex_play_monitor.before_loop
+async def before_apex_play_monitor():
+    await bot.wait_until_ready()
+
+
+@apex_play_monitor.error
+async def apex_play_monitor_error_handler(error):
+    print(f"❌ Apex play monitor task error: {error}")
+
+
 def setup_tasks(bot_instance, db_instance, api_instance):
     """
     Initialize and start all periodic tasks.
@@ -213,4 +326,13 @@ def setup_tasks(bot_instance, db_instance, api_instance):
     if not thermal_throttle_check.is_running():
         thermal_throttle_check.start()
         print("✅ Started thermal throttle check task")
+    # Start Apex play monitoring task
+    try:
+        if not apex_play_monitor.is_running():
+            apex_play_monitor.start()
+            print("✅ Started Apex play monitoring task")
+    except NameError:
+        # If the task wasn't defined for some reason, ignore
+        pass
+
     
