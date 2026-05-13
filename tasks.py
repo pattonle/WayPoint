@@ -15,7 +15,6 @@ bot = None
 db = None
 api = None
 
-test_id = 307923195082702848
 
 
 @tasks.loop(time=time(hour=9, minute=0, tzinfo=TIMEZONE_ET))
@@ -272,12 +271,24 @@ async def apex_play_monitor():
                                 # session_start_time stored as ISO or sqlite timestamp; display simple diff
                                 duration_td = now - datetime.fromisoformat(session_start_time) if isinstance(session_start_time, str) else now - session_start_time
                                 minutes = int(duration_td.total_seconds() // 60)
-                                duration = f"{minutes}m"
+                                # Format duration: minutes -> "45 minutes" or hours/minutes -> "4h 3m"
+                                if minutes < 60:
+                                    minute_label = "minute" if minutes == 1 else "minutes"
+                                    duration = f"{minutes} {minute_label}"
+                                else:
+                                    hours = minutes // 60
+                                    mins = minutes % 60
+                                    if mins:
+                                        duration = f"{hours}h {mins}m"
+                                    else:
+                                        duration = f"{hours}h"
                             except Exception:
                                 duration = "unknown"
 
-                        sign = "gained" if delta >= 0 else "lost"
-                        await user_obj.send(f"🎮 You {sign} {abs(delta)} RP in {duration}")
+                        # Format RP change with explicit sign (+/-)
+                        sign_char = "+" if delta > 0 else "-" if delta < 0 else "+"
+                        rp_str = f"{sign_char}{abs(int(delta))} RP"
+                        await user_obj.send(f"``{rp_str} | {duration}``")
                         print(f"✉️ Sent session summary to {discord_id}: {delta} RP")
                     except Exception as e:
                         print(f"❌ Failed to send DM to {discord_id}: {e}")
