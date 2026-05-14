@@ -15,6 +15,7 @@ bot = None
 db = None
 api = None
 
+test_id=
 
 
 @tasks.loop(time=time(hour=9, minute=0, tzinfo=TIMEZONE_ET))

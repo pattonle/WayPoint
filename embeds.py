@@ -25,6 +25,13 @@ async def create_player_stats_embed(platform, apex_uid, formatted_time, api):
     # Get predcap value
     predcap_value = api.get_predcap_value(platform)
     
+    # Calculate RP to Predator
+    if ranked_data['rankScore'] < predcap_value:
+        rp_until_pred = predcap_value - ranked_data['rankScore']
+    else:
+        rp_until_pred = 0
+        
+
     # Determine embed color based on rank
     rank_name_lower = ranked_data['rankName'].lower()
     if "predator" in rank_name_lower:
@@ -45,19 +52,19 @@ async def create_player_stats_embed(platform, apex_uid, formatted_time, api):
         colour = discord.Colour.default()
     
     if ranked_data['rankScore'] >= 16000:
-        rp_until_next_rank = 0
+        rp_until_next_rank = rp_until_pred
         next_rank_name = "Predator"
     elif ranked_data['rankScore'] >= 12000:
         rp_until_next_rank = 16000 - ranked_data['rankScore']
         next_rank_name = "Master"
-    elif ranked_data['rankScore'] >= 8250:
+    elif ranked_data['rankScore'] >= 8500:
         rp_until_next_rank = 12000 - ranked_data['rankScore']
         next_rank_name = "Diamond"
-    elif ranked_data['rankScore'] >= 5250:
-        rp_until_next_rank = 8250 - ranked_data['rankScore']
+    elif ranked_data['rankScore'] >= 5500:
+        rp_until_next_rank = 8500 - ranked_data['rankScore']
         next_rank_name = "Platinum"
     elif ranked_data['rankScore'] >= 3000:
-        rp_until_next_rank = 5250 - ranked_data['rankScore']
+        rp_until_next_rank = 5500 - ranked_data['rankScore']
         next_rank_name = "Gold"
     elif ranked_data['rankScore'] >= 1000:
         rp_until_next_rank = 3000 - ranked_data['rankScore']
@@ -67,11 +74,6 @@ async def create_player_stats_embed(platform, apex_uid, formatted_time, api):
         next_rank_name = "Bronze"
 
 
-    # Calculate RP to Predator
-    if ranked_data['rankScore'] < predcap_value:
-        rp_until_pred = predcap_value - ranked_data['rankScore']
-    else:
-        rp_until_pred = 0
     
     # Create embed
     player_embed = discord.Embed(
