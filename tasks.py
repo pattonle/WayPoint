@@ -263,6 +263,11 @@ async def apex_play_monitor():
                     # Update DB to end session
                     await db.set_session_end(discord_id, final_rp, now)
 
+                    # If there was no RP change, the player didn't play ranked — skip notifying
+                    if delta == 0:
+                        print(f"ℹ️ No RP change for {discord_id}; skipping DM")
+                        continue
+
                     # Notify user via DM
                     try:
                         user_obj = await bot.fetch_user(discord_id)
@@ -338,13 +343,14 @@ def setup_tasks(bot_instance, db_instance, api_instance):
     if not thermal_throttle_check.is_running():
         thermal_throttle_check.start()
         print("✅ Started thermal throttle check task")
-    # Start Apex play monitoring task
-    try:
-        if not apex_play_monitor.is_running():
-            apex_play_monitor.start()
-            print("✅ Started Apex play monitoring task")
-    except NameError:
-        # If the task wasn't defined for some reason, ignore
-        pass
+    # Apex play monitoring task is currently disabled/commented out.
+    # If you want to enable it again, uncomment the lines below.
+    # try:
+    #     if not apex_play_monitor.is_running():
+    #         apex_play_monitor.start()
+    #         print("✅ Started Apex play monitoring task")
+    # except NameError:
+    #     # If the task wasn't defined for some reason, ignore
+    #     pass
 
     
