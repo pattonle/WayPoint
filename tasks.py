@@ -343,14 +343,13 @@ def setup_tasks(bot_instance, db_instance, api_instance):
     if not thermal_throttle_check.is_running():
         thermal_throttle_check.start()
         print("✅ Started thermal throttle check task")
-    # Apex play monitoring task is currently disabled/commented out.
-    # If you want to enable it again, uncomment the lines below.
-    # try:
-    #     if not apex_play_monitor.is_running():
-    #         apex_play_monitor.start()
-    #         print("✅ Started Apex play monitoring task")
-    # except NameError:
-    #     # If the task wasn't defined for some reason, ignore
-    #     pass
+    
+    try:
+        if not apex_play_monitor.is_running():
+            apex_play_monitor.start()
+            print("✅ Started Apex play monitoring task")
+    except NameError:
+        # If the task wasn't defined for some reason, ignore
+        pass
 
     
