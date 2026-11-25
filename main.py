@@ -24,12 +24,19 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-# Initialize bot
-bot = commands.Bot(command_prefix='!', intents=intents)
-
 # Initialize database and API instances
 db = Database()
 api = API()
+
+
+class WayPointBot(commands.Bot):
+    async def close(self):
+        await api.close()
+        await super().close()
+
+
+# Initialize bot
+bot = WayPointBot(command_prefix='!', intents=intents)
 
 
 @bot.event
@@ -65,14 +72,7 @@ async def on_guild_join(guild):
 
 # Run the bot
 if __name__ == "__main__":
-    try:
-        bot.run(DISCORD_TOKEN)
-    finally:
-        import asyncio
-        try:
-            asyncio.run(api.close())
-        except Exception:
-            pass
+    bot.run(DISCORD_TOKEN)
 
 
 # THINGS TO CONSIDER FOR FUTURE UPDATES

@@ -5,7 +5,6 @@ import discord
 from discord.ext import tasks
 from datetime import datetime, time
 from config import OWNER_DISCORD_ID, TIMEZONE_ET
-from api import get_player_game_async
 from embeds import (
     create_player_stats_embed,
     create_server_status_embed,
@@ -206,7 +205,7 @@ async def apex_play_monitor():
                 continue
 
             try:
-                gameid = await get_player_game_async(steam_id)
+                gameid = await api.get_player_game(steam_id)
             except Exception as e:
                 print(f"❌ Failed to get Steam game for {steam_id}: {e}")
                 continue
@@ -241,7 +240,7 @@ async def apex_play_monitor():
                 start_rp = session_start_RP if session_start_RP is not None else (current_RP or 0)
                 delta = final_rp - start_rp
 
-                await db.set_session_end(discord_id, final_rp, now)
+                await db.set_session_end(discord_id, final_rp)
 
                 if delta == 0:
                     print(f"ℹ️ No RP change for {discord_id}; skipping notification")

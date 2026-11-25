@@ -39,6 +39,9 @@ class TestCommands(unittest.IsolatedAsyncioTestCase):
                 platform_param = next(p for p in cmds[cmd_name].parameters if p.name == "platform")
                 choice_values = [c.value for c in platform_param.choices]
                 self.assertEqual(choice_values, ["PC", "X1", "PS4"])
+
+            for guild_cmd in ("register", "leaderboard", "track", "apex_status", "sessions_channel"):
+                self.assertTrue(cmds[guild_cmd].guild_only, f"{guild_cmd} must be guild_only")
         finally:
             await api.close()
 

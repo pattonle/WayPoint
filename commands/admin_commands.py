@@ -28,6 +28,7 @@ async def setup(bot_instance, db_instance, api_instance):
 
 
 @app_commands.command(name="apex_status", description="Registers server status channel and updates the status message")
+@app_commands.guild_only()
 @app_commands.checks.has_role(ADMIN_ROLE)
 async def apex_status(interaction: discord.Interaction):
     """Register a channel for server status updates and post the initial status message."""
@@ -79,6 +80,7 @@ async def apex_status(interaction: discord.Interaction):
 
 
 @app_commands.command(name="sessions_channel", description="Set the current channel to receive completed RP session summaries")
+@app_commands.guild_only()
 @app_commands.checks.has_role(ADMIN_ROLE)
 async def sessions_channel(interaction: discord.Interaction):
     """Set the current channel as the server's RP session summary feed."""

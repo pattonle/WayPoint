@@ -19,7 +19,6 @@ from utils import (
     format_time_difference,
     parse_timestamp,
 )
-from api import get_steam_player_async
 
 
 PLATFORM_CHOICES = [
@@ -57,6 +56,7 @@ async def setup(bot_instance, db_instance, api_instance):
 
 
 @app_commands.command(name="register", description="Register your Apex Legends account with the bot")
+@app_commands.guild_only()
 @app_commands.choices(platform=PLATFORM_CHOICES)
 async def register_user(interaction: discord.Interaction, gamertag: str, platform: app_commands.Choice[str]):
     """Register a user with their Apex Legends gamertag and platform."""
@@ -206,6 +206,7 @@ async def maps(interaction: discord.Interaction):
 
 
 @app_commands.command(name="leaderboard", description="Show the server's Apex Legends RP leaderboard")
+@app_commands.guild_only()
 async def leaderboard(interaction: discord.Interaction):
     """Fetch live RP for all registered users in this server and display a leaderboard."""
     await interaction.response.defer()
@@ -273,6 +274,7 @@ async def history(interaction: discord.Interaction, player: discord.Member = Non
 
 
 @app_commands.command(name="track", description="Toggle tracking your Apex RP (start/stop)")
+@app_commands.guild_only()
 async def track(interaction: discord.Interaction):
     """Toggle manual RP tracking for the calling user."""
     await interaction.response.defer(ephemeral=True)
@@ -373,7 +375,7 @@ async def getsteam(interaction: discord.Interaction):
         return
 
     await interaction.response.defer(ephemeral=True)
-    player = await get_steam_player_async(steam_id)
+    player = await api.get_steam_player(steam_id)
 
     if player is None:
         await interaction.followup.send(
@@ -408,7 +410,7 @@ async def setsteam(interaction: discord.Interaction, steamid: str):
         await interaction.followup.send("❌ You are not registered. Use `/register` first.", ephemeral=True)
         return
 
-    player = await get_steam_player_async(steamid)
+    player = await api.get_steam_player(steamid)
     if player is None:
         await interaction.followup.send(
             "❌ Could not validate that Steam ID/vanity exists. Please provide a valid SteamID64 or vanity name.",

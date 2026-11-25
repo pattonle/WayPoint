@@ -139,13 +139,12 @@ class Database:
             )
             await db.commit()
 
-    async def set_session_end(self, discord_id, final_RP, end_time):
-        """Mark the user as not in-game, update current RP, and clear session fields."""
-        ended_iso = end_time.isoformat() if hasattr(end_time, "isoformat") else end_time
+    async def set_session_end(self, discord_id, final_RP):
+        """Mark the user as not in-game, update current RP, and clear Steam session fields."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
-                "UPDATE users SET current_RP = ?, time_registered = ?, session_start_RP = NULL, session_start_time = NULL, is_in_game = 0 WHERE discord_id = ?",
-                (final_RP, ended_iso, discord_id)
+                "UPDATE users SET current_RP = ?, session_start_RP = NULL, session_start_time = NULL, is_in_game = 0 WHERE discord_id = ?",
+                (final_RP, discord_id)
             )
             await db.commit()
 
