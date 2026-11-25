@@ -65,7 +65,14 @@ async def on_guild_join(guild):
 
 # Run the bot
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
+    try:
+        bot.run(DISCORD_TOKEN)
+    finally:
+        import asyncio
+        try:
+            asyncio.run(api.close())
+        except Exception:
+            pass
 
 
 # THINGS TO CONSIDER FOR FUTURE UPDATES

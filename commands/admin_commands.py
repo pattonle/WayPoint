@@ -15,68 +15,46 @@ api = None
 
 
 async def setup(bot_instance, db_instance, api_instance):
-    """
-    Register all admin commands with the bot.
-    
-    Args:
-        bot_instance: Discord bot instance
-        db_instance: Database instance
-        api_instance: API instance
-    """
+    """Register all admin commands with the bot."""
     global bot, db, api
     bot = bot_instance
     db = db_instance
     api = api_instance
-    
-    # Register commands
+
     bot.tree.add_command(apex_status)
-    
+    bot.tree.add_command(sessions_channel)
+
     print("✅ Admin commands registered")
+
 
 @app_commands.command(name="apex_status", description="Registers server status channel and updates the status message")
 @app_commands.checks.has_role(ADMIN_ROLE)
 async def apex_status(interaction: discord.Interaction):
-    """
-    Register a channel for server status updates and post the initial status message.
-    
-    Args:
-        interaction: Discord interaction
-    """
-    # Try to defer, if it fails the interaction has expired
+    """Register a channel for server status updates and post the initial status message."""
     try:
         await interaction.response.defer(ephemeral=True)
     except (discord.errors.NotFound, discord.errors.HTTPException):
-        # Interaction already expired, we can't respond
         return
-    
+
     apex_server_status_channel = interaction.channel.id
-    
-    # Get existing server config
     server = await db.get_server(interaction.guild.id)
-    apex_server_message_id = server[2] if server else None
-    
-    # Save channel configuration
+    apex_server_message_id = server[2] if server and len(server) > 2 else None
+
     await db.save_server_config(
         discord_server_id=interaction.guild.id,
         apex_server_channel_id=apex_server_status_channel
     )
-    
+
     channel = bot.get_channel(apex_server_status_channel)
     if not channel:
         await interaction.followup.send("❌ Could not find the specified channel.", ephemeral=True)
         return
-    
-    # Fetch API data before creating the embed
+
     await api.fetch_all_data()
-    
-    # Create timestamp
     now_et = datetime.now(TIMEZONE_ET)
     formatted_time = now_et.strftime("%m/%d/%Y %I:%M %p").lstrip("0")
-    
-    # Create the server embed
     server_embed = create_server_status_embed(formatted_time, api)
-    
-    # Check if a message already exists and edit it, otherwise send a new one
+
     if apex_server_message_id:
         try:
             message = await channel.fetch_message(apex_server_message_id)
@@ -85,19 +63,31 @@ async def apex_status(interaction: discord.Interaction):
             message = await channel.send(embed=server_embed)
     else:
         message = await channel.send(embed=server_embed)
-    
-    # Update the database with the new message ID
+
     await db.save_server_config(
         discord_server_id=interaction.guild.id,
         apex_server_message_id=message.id
     )
-    
-    # Send success message at the end
+
     try:
         await interaction.followup.send(
             f"✅ Server status channel ID {apex_server_status_channel} saved and message updated!",
             ephemeral=True
         )
     except discord.errors.NotFound:
-        # Interaction expired, but the operation still completed successfully
         pass
+
+
+@app_commands.command(name="sessions_channel", description="Set the current channel to receive completed RP session summaries")
+@app_commands.checks.has_role(ADMIN_ROLE)
+async def sessions_channel(interaction: discord.Interaction):
+    """Set the current channel as the server's RP session summary feed."""
+    await interaction.response.defer(ephemeral=True)
+    await db.save_server_config(
+        discord_server_id=interaction.guild.id,
+        sessions_channel_id=interaction.channel.id
+    )
+    await interaction.followup.send(
+        f"✅ Session summaries will now be posted in {interaction.channel.mention}!",
+        ephemeral=True
+    )
